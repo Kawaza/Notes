@@ -471,3 +471,39 @@ button:disabled {
   --color-accent: #18181b;
   --color-accent-foreground: #d4d4d8;
 }
+
+/* Color palette: Pink */
+[data-palette="pink"] {
+  --color-primary: #ec4899;
+  --color-accent: #fce7f3;
+  --color-accent-foreground: #be185d;
+}
+.dark[data-palette="pink"] {
+  --color-primary: #f472b6;
+  --color-accent: #1f0a14;
+  --color-accent-foreground: #f9a8d4;
+}
+
+/* Color palette: Pastel Green */
+[data-palette="pastel"] {
+  --color-primary: #4ade80;
+  --color-accent: #ecfdf5;
+  --color-accent-foreground: #166534;
+}
+.dark[data-palette="pastel"] {
+  --color-primary: #86efac;
+  --color-accent: #0a1a12;
+  --color-accent-foreground: #bbf7d0;
+}
+
+/* Color palette: Yellow */
+[data-palette="yellow"] {
+  --color-primary: #eab308;
+  --color-accent: #fef9c3;
+  --color-accent-foreground: #a16207;
+}
+.dark[data-palette="yellow"] {
+  --color-primary: #facc15;
+  --color-accent: #1a1608;
+  --color-accent-foreground: #fde047;
+}

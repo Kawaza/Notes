@@ -7,6 +7,9 @@ export const COLOR_PALETTES: { id: ColorPalette; name: string; preview: string }
   { id: 'sunset', name: 'Sunset', preview: '#f97316' },
   { id: 'rose', name: 'Rose', preview: '#f43f5e' },
   { id: 'mono', name: 'Mono', preview: '#71717a' },
+  { id: 'pink', name: 'Pink', preview: '#ec4899' },
+  { id: 'pastel', name: 'Pastel Green', preview: '#86efac' },
+  { id: 'yellow', name: 'Yellow', preview: '#eab308' },
 ];
 
 export function applyPalette(palette: ColorPalette, theme: 'light' | 'dark') {
