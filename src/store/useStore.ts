@@ -157,7 +157,8 @@ function migrateData(data: Partial<AppData>): AppData {
     notes,
     folderLinks,
     folderSecrets: data.folderSecrets ?? [],
-    colorPalette: data.colorPalette ?? 'default',
+    colorPalette:
+      data.colorPalette === 'mono' ? 'default' : (data.colorPalette ?? 'default'),
     selectedTag: data.selectedTag ?? null,
     selectedFolderId:
       data.selectedFolderId === DEFAULT_FOLDER_ID && !data.selectedFolderId

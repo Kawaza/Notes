@@ -59,7 +59,7 @@ export interface Note {
 
 export type ViewMode = 'notes' | 'calendar';
 export type Theme = 'light' | 'dark';
-export type ColorPalette = 'default' | 'ocean' | 'forest' | 'sunset' | 'rose' | 'mono' | 'pink' | 'pastel' | 'yellow';
+export type ColorPalette = 'default' | 'ocean' | 'forest' | 'sunset' | 'rose' | 'pink' | 'pastel' | 'yellow' | 'sky';
 
 export const SORTABLE_FOLDER_PREFIX = 'sortable-folder-';
 

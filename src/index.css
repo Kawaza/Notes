@@ -460,19 +460,19 @@ button:disabled {
   --color-accent-foreground: #fda4af;
 }
 
-/* Color palette: Mono */
-[data-palette="mono"] {
-  --color-primary: #52525b;
-  --color-accent: #f4f4f5;
-  --color-accent-foreground: #3f3f46;
+/* Color palette: Pastel Blue */
+[data-palette="sky"] {
+  --color-primary: #60a5fa;
+  --color-accent: #eff6ff;
+  --color-accent-foreground: #1d4ed8;
 }
-.dark[data-palette="mono"] {
-  --color-primary: #a1a1aa;
-  --color-accent: #18181b;
-  --color-accent-foreground: #d4d4d8;
+.dark[data-palette="sky"] {
+  --color-primary: #93c5fd;
+  --color-accent: #0a1420;
+  --color-accent-foreground: #bfdbfe;
 }
 
-/* Color palette: Pink */
+/* Color palette: Yellow */
 [data-palette="pink"] {
   --color-primary: #ec4899;
   --color-accent: #fce7f3;
