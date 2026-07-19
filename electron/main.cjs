@@ -82,6 +82,15 @@ function createWindow() {
       mainWindow.hide();
     }
   });
+
+  // Allow NSIS installer / auto-updater to replace the app (Squirrel.Windows / electron-updater)
+  if (process.platform === 'win32') {
+    process.on('message', (message) => {
+      if (message === 'squirrel-firstrun') {
+        app.isQuitting = true;
+      }
+    });
+  }
 }
 
 function createTray() {

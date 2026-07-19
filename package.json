@@ -1,7 +1,7 @@
 {
   "name": "notes",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A clean, local note-taking app with folders, calendar, and code blocks",
   "author": "Kawaza",
   "repository": {
@@ -20,7 +20,7 @@
     "recover:chrome": "node scripts/recover-from-chrome.mjs",
     "electron:build": "npm run build && electron-builder",
     "electron:build:win": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",
-    "electron:publish:win": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --publish always"
+    "electron:publish:win": "node scripts/publish-win.mjs"
   },
   "build": {
     "appId": "com.notes.app",
@@ -55,7 +55,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Notes"
+      "shortcutName": "Notes",
+      "include": "build/installer.nsh"
     }
   },
   "dependencies": {

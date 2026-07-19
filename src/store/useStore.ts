@@ -180,27 +180,18 @@ export const useStore = create<Store>((set, get) => ({
           id: welcomeId,
           folderId: DEFAULT_FOLDER_ID,
           title: 'Welcome to Notes',
-          content: `# Welcome to Notes
-
-Your personal note-taking app. Here's what you can do:
-
-- **Folders** — Organize notes in the sidebar
-- **Markdown mode** — Toggle with the \`MD\` button in the editor
-- **Wiki links** — Type \`[[Note Title]]\` to link between notes
-- **Tags** — Add tags at the bottom of any note
-- **Calendar** — Schedule tasks with date/time
-- **Search** — Press \`Ctrl+K\` to search everything
-
-## Try a code block
-
-\`\`\`typescript
-function greet(name: string): string {
-  return \`Hello, \${name}!\`;
-}
-\`\`\`
-
-Press **Ctrl+N** for a new note, **Ctrl+Shift+D** to toggle dark mode.`,
-          contentType: 'markdown',
+          content: `<h1>Welcome to Notes</h1>
+<p>Your personal note-taking app. Here's what you can do:</p>
+<ul>
+<li><strong>Folders</strong> — Organize notes in the sidebar</li>
+<li><strong>Markdown mode</strong> — Toggle with the MD button in the editor</li>
+<li><strong>Wiki links</strong> — Type [[Note Title]] to link between notes</li>
+<li><strong>Tags</strong> — Add tags at the bottom of any note</li>
+<li><strong>Calendar</strong> — Schedule tasks with date/time</li>
+<li><strong>Search</strong> — Press Ctrl+K to search everything</li>
+</ul>
+<p>Press <strong>Ctrl+N</strong> for a new note, <strong>Ctrl+Shift+D</strong> to toggle dark mode.</p>`,
+          contentType: 'html',
           tags: ['welcome'],
           pinned: true,
           createdAt: now,
@@ -346,7 +337,7 @@ Press **Ctrl+N** for a new note, **Ctrl+Shift+D** to toggle dark mode.`,
       folderId,
       title: partial.title ?? 'Imported Note',
       content: partial.content ?? '',
-      contentType: partial.contentType ?? 'markdown',
+      contentType: partial.contentType ?? 'html',
       tags: partial.tags ?? [],
       createdAt: now,
       updatedAt: now,
