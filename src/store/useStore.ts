@@ -25,7 +25,8 @@ interface Store extends AppData {
   requestFolderDialog: (type: 'secret' | 'link') => void;
   clearFolderDialogRequest: () => void;
   hydrate: () => Promise<void>;
-  persist: () => void;
+  persist: () => Promise<void>;
+  flushPersist: () => Promise<void>;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
   setColorPalette: (palette: ColorPalette) => void;
@@ -85,7 +86,9 @@ let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleSave(getState: () => Store) {
   if (saveTimeout) clearTimeout(saveTimeout);
-  saveTimeout = setTimeout(() => getState().persist(), 300);
+  saveTimeout = setTimeout(() => {
+    void getState().persist();
+  }, 300);
 }
 
 function migrateNote(note: Partial<Note> & Pick<Note, 'id' | 'folderId' | 'title' | 'content' | 'createdAt' | 'updatedAt' | 'isTask' | 'order'>): Note {
@@ -167,8 +170,21 @@ export const useStore = create<Store>((set, get) => ({
         set({ ...migrateData(raw), hydrated: true });
         return;
       }
+
+      const hasExistingFile =
+        window.electronAPI?.hasDataFile != null
+          ? await window.electronAPI.hasDataFile()
+          : Boolean(localStorage.getItem('notes-app-data'));
+
+      if (hasExistingFile) {
+        console.error('Saved data exists but could not be loaded — not overwriting.');
+        set({ hydrated: true });
+        return;
+      }
     } catch (err) {
       console.error('Failed to load saved data:', err);
+      set({ hydrated: true });
+      return;
     }
 
     const welcomeId = uuidv4();
@@ -202,20 +218,29 @@ export const useStore = create<Store>((set, get) => ({
       ],
       selectedNoteId: welcomeId,
     });
-    setTimeout(() => get().persist(), 0);
+    void get().persist();
   },
 
-  persist: () => {
+  persist: async () => {
     const {
-      hydrated, hydrate, persist, searchOpen, settingsOpen,
+      hydrated, hydrate, persist, flushPersist, searchOpen, settingsOpen,
       folderDialogRequest, requestFolderDialog, clearFolderDialogRequest,
       ...data
     } = get();
+    if (!hydrated) return;
     if (window.electronAPI?.isElectron) {
-      window.electronAPI.saveData(data);
+      await window.electronAPI.saveData(data);
     } else {
       localStorage.setItem('notes-app-data', JSON.stringify(data));
     }
+  },
+
+  flushPersist: async () => {
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+      saveTimeout = null;
+    }
+    await get().persist();
   },
 
   setTheme: (theme) => {

@@ -107,6 +107,8 @@ declare global {
     electronAPI?: {
       loadData: () => Promise<AppData | null>;
       saveData: (data: AppData) => Promise<boolean>;
+      hasDataFile: () => Promise<boolean>;
+      getDataPath: () => Promise<string>;
       isElectron: boolean;
       getAppVersion: () => Promise<string>;
       checkForUpdates: () => Promise<unknown>;
@@ -118,6 +120,8 @@ declare global {
           message?: string;
         }) => void,
       ) => () => void;
+      onFlushSave: (callback: () => void) => () => void;
+      notifyFlushSaveDone: () => void;
       showSaveDialog: (options: object) => Promise<string | null>;
       showOpenDialog: (options: object) => Promise<string[] | null>;
       writeFile: (path: string, content: string) => Promise<boolean>;

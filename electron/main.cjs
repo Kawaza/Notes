@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const { setupAutoUpdater, checkForUpdates } = require('./update.cjs');
 
+app.setName('Notes');
+
 const isDev = !app.isPackaged;
 let mainWindow;
 let tray;
@@ -18,6 +20,41 @@ if (!gotTheLock) {
 
 function getDataPath() {
   return path.join(app.getPath('userData'), 'notes-data.json');
+}
+
+function getBackupPath() {
+  return path.join(app.getPath('userData'), 'notes-data.json.bak');
+}
+
+function saveDataToDisk(data) {
+  const dataPath = getDataPath();
+  const tmpPath = `${dataPath}.tmp`;
+  const json = JSON.stringify(data, null, 2);
+  fs.mkdirSync(path.dirname(dataPath), { recursive: true });
+  if (fs.existsSync(dataPath)) {
+    fs.copyFileSync(dataPath, getBackupPath());
+  }
+  fs.writeFileSync(tmpPath, json, 'utf-8');
+  fs.renameSync(tmpPath, dataPath);
+  return true;
+}
+
+let quitAfterFlush = false;
+
+function requestQuitAfterFlush() {
+  quitAfterFlush = true;
+  app.isQuitting = true;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('flush-save');
+    setTimeout(() => {
+      if (quitAfterFlush) {
+        quitAfterFlush = false;
+        app.exit(0);
+      }
+    }, 2000);
+    return;
+  }
+  app.exit(0);
 }
 
 function createTrayIcon() {
@@ -113,10 +150,7 @@ function createTray() {
     { type: 'separator' },
     {
       label: 'Quit',
-      click: () => {
-        app.isQuitting = true;
-        app.quit();
-      },
+      click: () => requestQuitAfterFlush(),
     },
   ]);
 
@@ -130,21 +164,35 @@ ipcMain.handle('load-data', () => {
     if (fs.existsSync(dataPath)) {
       return JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
     }
+    const backupPath = getBackupPath();
+    if (fs.existsSync(backupPath)) {
+      return JSON.parse(fs.readFileSync(backupPath, 'utf-8'));
+    }
     return null;
-  } catch {
+  } catch (err) {
+    console.error('Failed to load notes data:', err);
     return null;
   }
 });
 
 ipcMain.handle('save-data', (_event, data) => {
   try {
-    const dataPath = getDataPath();
-    fs.mkdirSync(path.dirname(dataPath), { recursive: true });
-    fs.writeFileSync(dataPath, JSON.stringify(data, null, 2), 'utf-8');
-    return true;
-  } catch {
+    return saveDataToDisk(data);
+  } catch (err) {
+    console.error('Failed to save notes data:', err);
     return false;
   }
+});
+
+ipcMain.handle('has-data-file', () => {
+  return fs.existsSync(getDataPath()) || fs.existsSync(getBackupPath());
+});
+
+ipcMain.handle('get-data-path', () => getDataPath());
+
+ipcMain.on('flush-save-done', () => {
+  quitAfterFlush = false;
+  app.exit(0);
 });
 
 ipcMain.handle('check-for-updates', () => checkForUpdates(true));
@@ -164,7 +212,10 @@ if (gotTheLock) {
     showMainWindow();
   });
 
-  app.on('before-quit', () => {
-    app.isQuitting = true;
+  app.on('before-quit', (e) => {
+    if (app.isQuitting && !quitAfterFlush) return;
+    if (quitAfterFlush) return;
+    e.preventDefault();
+    requestQuitAfterFlush();
   });
 }

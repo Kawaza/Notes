@@ -41,6 +41,23 @@ export default function App() {
   }, [hydrate]);
 
   useEffect(() => {
+    if (!hydrated) return;
+    const interval = setInterval(() => {
+      void useStore.getState().persist();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [hydrated]);
+
+  useEffect(() => {
+    if (!window.electronAPI?.onFlushSave) return;
+    return window.electronAPI.onFlushSave(() => {
+      void useStore.getState().flushPersist().then(() => {
+        window.electronAPI?.notifyFlushSaveDone?.();
+      });
+    });
+  }, []);
+
+  useEffect(() => {
     applyPalette(colorPalette, theme);
   }, [theme, colorPalette]);
 
