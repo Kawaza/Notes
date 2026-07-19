@@ -1,0 +1,15 @@
+import type { ColorPalette } from '../types';
+
+export const COLOR_PALETTES: { id: ColorPalette; name: string; preview: string }[] = [
+  { id: 'default', name: 'Indigo', preview: '#6366f1' },
+  { id: 'ocean', name: 'Ocean', preview: '#0ea5e9' },
+  { id: 'forest', name: 'Forest', preview: '#22c55e' },
+  { id: 'sunset', name: 'Sunset', preview: '#f97316' },
+  { id: 'rose', name: 'Rose', preview: '#f43f5e' },
+  { id: 'mono', name: 'Mono', preview: '#71717a' },
+];
+
+export function applyPalette(palette: ColorPalette, theme: 'light' | 'dark') {
+  document.documentElement.setAttribute('data-palette', palette);
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+}
