@@ -36,7 +36,8 @@
       {
         "provider": "github",
         "owner": "Kawaza",
-        "repo": "Notes"
+        "repo": "Notes",
+        "releaseType": "release"
       }
     ],
     "win": {
