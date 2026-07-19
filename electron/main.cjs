@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { setupAutoUpdater, checkForUpdates } = require('./update.cjs');
+const { setupAutoUpdater, checkForUpdates, downloadUpdate, installUpdate, getIsInstallingUpdate } = require('./update.cjs');
 
 app.setName('Notes');
 
@@ -114,6 +114,7 @@ function createWindow() {
   }
 
   mainWindow.on('close', (e) => {
+    if (getIsInstallingUpdate()) return;
     if (!app.isQuitting) {
       e.preventDefault();
       requestQuitAfterFlush();
@@ -205,6 +206,8 @@ ipcMain.on('flush-save-done', () => {
 });
 
 ipcMain.handle('check-for-updates', () => checkForUpdates(true));
+ipcMain.handle('download-update', () => downloadUpdate());
+ipcMain.handle('install-update', () => installUpdate());
 ipcMain.handle('get-app-version', () => app.getVersion());
 
 if (gotTheLock) {

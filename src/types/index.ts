@@ -113,10 +113,13 @@ declare global {
       isElectron: boolean;
       getAppVersion: () => Promise<string>;
       checkForUpdates: () => Promise<unknown>;
+      downloadUpdate: () => Promise<unknown>;
+      installUpdate: () => Promise<void>;
       onUpdateEvent: (
         callback: (event: {
           type: string;
           version?: string;
+          currentVersion?: string;
           percent?: number;
           message?: string;
         }) => void,

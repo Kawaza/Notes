@@ -17,6 +17,8 @@ import { Editor } from './components/Editor';
 import { CalendarView } from './components/CalendarView';
 import { GlobalSearch } from './components/GlobalSearch';
 import { SettingsPanel } from './components/SettingsPanel';
+import { UpdateBanner } from './components/UpdateUI';
+import { useUpdate } from './context/UpdateContext';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { applyPalette } from './constants/palettes';
 import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, SORTABLE_FOLDER_PREFIX, folderIdFromSortable, isFolderArchived } from './types';
@@ -33,6 +35,13 @@ export default function App() {
   const selectedFolderId = useStore((s) => s.selectedFolderId);
   const selectedNoteId = useStore((s) => s.selectedNoteId);
   const createNote = useStore((s) => s.createNote);
+  const setSettingsOpen = useStore((s) => s.setSettingsOpen);
+  const {
+    bannerState,
+    downloadUpdate,
+    installUpdate,
+    dismissBanner,
+  } = useUpdate();
 
   useKeyboardShortcuts();
 
@@ -143,16 +152,28 @@ export default function App() {
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <div className="h-screen flex overflow-hidden bg-background text-foreground">
-        <Sidebar />
-        {viewMode === 'calendar' ? (
-          <CalendarView />
-        ) : (
-          <>
-            <NoteList />
-            <Editor key={selectedNoteId ?? selectedFolderId ?? 'none'} />
-          </>
-        )}
+      <div className="h-screen flex flex-col overflow-hidden bg-background text-foreground">
+        <UpdateBanner
+          state={bannerState}
+          onDownload={downloadUpdate}
+          onInstall={installUpdate}
+          onDismiss={dismissBanner}
+          onOpenSettings={() => {
+            dismissBanner();
+            setSettingsOpen(true);
+          }}
+        />
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <Sidebar />
+          {viewMode === 'calendar' ? (
+            <CalendarView />
+          ) : (
+            <>
+              <NoteList />
+              <Editor key={selectedNoteId ?? selectedFolderId ?? 'none'} />
+            </>
+          )}
+        </div>
       </div>
       <GlobalSearch />
       <SettingsPanel />

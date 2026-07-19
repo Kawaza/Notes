@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { Download, Upload, X, Palette, Sun, Moon, RefreshCw } from 'lucide-react';
+import { Download, Upload, X, Palette, Sun, Moon } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { COLOR_PALETTES } from '../constants/palettes';
 import {
@@ -11,6 +11,8 @@ import {
 } from '../utils/exportImport';
 import type { ColorPalette } from '../types';
 import { DEFAULT_FOLDER_ID } from '../types';
+import { useUpdate } from '../context/UpdateContext';
+import { UpdateSettingsSection } from './UpdateUI';
 
 export function SettingsPanel() {
   const settingsOpen = useStore((s) => s.settingsOpen);
@@ -24,46 +26,20 @@ export function SettingsPanel() {
 
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const mdInputRef = useRef<HTMLInputElement>(null);
-  const isElectron = !!window.electronAPI?.isElectron;
   const [appVersion, setAppVersion] = useState<string | null>(null);
-  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+
+  const {
+    state: updateState,
+    isElectron,
+    checkForUpdates,
+    downloadUpdate,
+    installUpdate,
+  } = useUpdate();
 
   useEffect(() => {
     if (!isElectron || !window.electronAPI?.getAppVersion) return;
     window.electronAPI.getAppVersion().then(setAppVersion);
   }, [isElectron]);
-
-  useEffect(() => {
-    if (!isElectron || !window.electronAPI?.onUpdateEvent) return;
-    return window.electronAPI.onUpdateEvent((event) => {
-      switch (event.type) {
-        case 'checking':
-          setUpdateStatus('Checking for updates…');
-          break;
-        case 'downloading':
-          setUpdateStatus('Downloading update…');
-          break;
-        case 'progress':
-          setUpdateStatus(`Downloading… ${Math.round(event.percent ?? 0)}%`);
-          break;
-        case 'downloaded':
-          setUpdateStatus(`Update ${event.version} ready — restart to install.`);
-          break;
-        case 'not-available':
-          setUpdateStatus('You have the latest version.');
-          break;
-        case 'error':
-          setUpdateStatus('Could not check for updates.');
-          break;
-        default:
-          break;
-      }
-    });
-  }, [isElectron]);
-
-  const handleCheckForUpdates = () => {
-    window.electronAPI?.checkForUpdates?.();
-  };
 
   if (!settingsOpen) return null;
 
@@ -213,23 +189,13 @@ export function SettingsPanel() {
           </section>
 
           {isElectron && (
-            <section>
-              <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">
-                Updates
-              </h3>
-              <p className="text-sm text-muted-foreground mb-3">
-                Version {appVersion ?? '…'}
-              </p>
-              <button
-                onClick={handleCheckForUpdates}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-border text-sm hover:bg-muted cursor-pointer transition-colors"
-              >
-                <RefreshCw size={15} /> Check for updates
-              </button>
-              {updateStatus && (
-                <p className="text-xs text-muted-foreground mt-2">{updateStatus}</p>
-              )}
-            </section>
+            <UpdateSettingsSection
+              state={updateState}
+              appVersion={appVersion}
+              onCheck={checkForUpdates}
+              onDownload={downloadUpdate}
+              onInstall={installUpdate}
+            />
           )}
 
           <section className="text-xs text-muted-foreground space-y-1 pt-2 border-t border-border">
