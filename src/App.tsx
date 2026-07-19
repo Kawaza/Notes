@@ -44,7 +44,7 @@ export default function App() {
     if (!hydrated) return;
     const interval = setInterval(() => {
       void useStore.getState().persist();
-    }, 30000);
+    }, 5000);
     return () => clearInterval(interval);
   }, [hydrated]);
 

@@ -82,13 +82,30 @@ interface Store extends AppData {
   openNoteByTitle: (title: string) => boolean;
 }
 
+function getPersistableData(state: Store): AppData {
+  return {
+    folders: state.folders,
+    notes: state.notes,
+    folderLinks: state.folderLinks,
+    folderSecrets: state.folderSecrets,
+    theme: state.theme,
+    colorPalette: state.colorPalette,
+    selectedFolderId: state.selectedFolderId,
+    selectedNoteId: state.selectedNoteId,
+    viewMode: state.viewMode,
+    selectedTag: state.selectedTag,
+  };
+}
+
+let hydrateStarted = false;
+
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleSave(getState: () => Store) {
   if (saveTimeout) clearTimeout(saveTimeout);
   saveTimeout = setTimeout(() => {
     void getState().persist();
-  }, 300);
+  }, 100);
 }
 
 function migrateNote(note: Partial<Note> & Pick<Note, 'id' | 'folderId' | 'title' | 'content' | 'createdAt' | 'updatedAt' | 'isTask' | 'order'>): Note {
@@ -157,6 +174,9 @@ export const useStore = create<Store>((set, get) => ({
   folderDialogRequest: null,
 
   hydrate: async () => {
+    if (get().hydrated || hydrateStarted) return;
+    hydrateStarted = true;
+
     try {
       let raw: AppData | null = null;
       if (window.electronAPI?.isElectron) {
@@ -222,14 +242,14 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   persist: async () => {
-    const {
-      hydrated, hydrate, persist, flushPersist, searchOpen, settingsOpen,
-      folderDialogRequest, requestFolderDialog, clearFolderDialogRequest,
-      ...data
-    } = get();
-    if (!hydrated) return;
+    if (!get().hydrated) return;
+    const data = getPersistableData(get());
+
     if (window.electronAPI?.isElectron) {
-      await window.electronAPI.saveData(data);
+      const ok = window.electronAPI.saveDataSync
+        ? window.electronAPI.saveDataSync(data)
+        : await window.electronAPI.saveData(data);
+      if (!ok) console.error('Failed to save notes to disk');
     } else {
       localStorage.setItem('notes-app-data', JSON.stringify(data));
     }
@@ -239,6 +259,13 @@ export const useStore = create<Store>((set, get) => ({
     if (saveTimeout) {
       clearTimeout(saveTimeout);
       saveTimeout = null;
+    }
+    if (!get().hydrated) return;
+    const data = getPersistableData(get());
+    if (window.electronAPI?.saveDataSync) {
+      const ok = window.electronAPI.saveDataSync(data);
+      if (!ok) console.error('Failed to save notes to disk');
+      return;
     }
     await get().persist();
   },

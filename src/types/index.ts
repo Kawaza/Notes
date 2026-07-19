@@ -107,6 +107,7 @@ declare global {
     electronAPI?: {
       loadData: () => Promise<AppData | null>;
       saveData: (data: AppData) => Promise<boolean>;
+      saveDataSync: (data: AppData) => boolean;
       hasDataFile: () => Promise<boolean>;
       getDataPath: () => Promise<string>;
       isElectron: boolean;

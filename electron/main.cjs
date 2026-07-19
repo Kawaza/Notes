@@ -116,7 +116,7 @@ function createWindow() {
   mainWindow.on('close', (e) => {
     if (!app.isQuitting) {
       e.preventDefault();
-      mainWindow.hide();
+      requestQuitAfterFlush();
     }
   });
 
@@ -181,6 +181,15 @@ ipcMain.handle('save-data', (_event, data) => {
   } catch (err) {
     console.error('Failed to save notes data:', err);
     return false;
+  }
+});
+
+ipcMain.on('save-data-sync', (event, data) => {
+  try {
+    event.returnValue = saveDataToDisk(data);
+  } catch (err) {
+    console.error('Failed to save notes data (sync):', err);
+    event.returnValue = false;
   }
 });
 
