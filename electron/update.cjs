@@ -3,6 +3,7 @@ const { autoUpdater } = require('electron-updater');
 let mainWindow = null;
 let manualCheckPending = false;
 let isInstallingUpdate = false;
+let pendingFlushResolve = null;
 
 function sendStatus(payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -85,6 +86,31 @@ async function downloadUpdate() {
   }
 }
 
+function waitForRendererFlush(timeoutMs = 2500) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const timeout = setTimeout(resolve, timeoutMs);
+    pendingFlushResolve = () => {
+      clearTimeout(timeout);
+      pendingFlushResolve = null;
+      resolve();
+    };
+    mainWindow.webContents.send('flush-save');
+  });
+}
+
+function resolvePendingFlush() {
+  if (pendingFlushResolve) {
+    const resolve = pendingFlushResolve;
+    pendingFlushResolve = null;
+    resolve();
+    return true;
+  }
+  return false;
+}
+
 function installUpdate() {
   const { app, BrowserWindow } = require('electron');
   if (isInstallingUpdate) return;
@@ -108,7 +134,7 @@ function installUpdate() {
       app.isQuitting = false;
       sendStatus({ type: 'error', message: err?.message ?? 'Install failed' });
     }
-  }, 500);
+  }, 1000);
 }
 
 function getIsInstallingUpdate() {
@@ -120,6 +146,8 @@ module.exports = {
   checkForUpdates,
   downloadUpdate,
   installUpdate,
+  waitForRendererFlush,
+  resolvePendingFlush,
   getIsInstallingUpdate,
   sendStatus,
 };

@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { setupAutoUpdater, checkForUpdates, downloadUpdate, installUpdate, getIsInstallingUpdate } = require('./update.cjs');
+const { setupAutoUpdater, checkForUpdates, downloadUpdate, installUpdate, waitForRendererFlush, resolvePendingFlush, getIsInstallingUpdate } = require('./update.cjs');
 const { getTrayIcon, getWindowIcon } = require('./icon-utils.cjs');
 
 app.setName('Notes');
@@ -210,6 +210,7 @@ ipcMain.handle('has-data-file', () => {
 ipcMain.handle('get-data-path', () => getDataPath());
 
 ipcMain.on('flush-save-done', () => {
+  if (resolvePendingFlush()) return;
   if (getIsInstallingUpdate()) return;
   quitAfterFlush = false;
   app.exit(0);
@@ -217,9 +218,10 @@ ipcMain.on('flush-save-done', () => {
 
 ipcMain.handle('check-for-updates', () => checkForUpdates(true));
 ipcMain.handle('download-update', () => downloadUpdate());
-ipcMain.handle('install-update', () => {
+ipcMain.handle('install-update', async () => {
   if (getIsInstallingUpdate()) return { ok: false, reason: 'already-installing' };
   quitAfterFlush = false;
+  await waitForRendererFlush();
   if (tray) {
     tray.destroy();
     tray = null;
@@ -241,6 +243,10 @@ if (gotTheLock) {
   });
 
   app.on('window-all-closed', () => {
+    if (getIsInstallingUpdate()) {
+      app.quit();
+      return;
+    }
     // Keep running in tray on Windows
   });
 
@@ -249,6 +255,7 @@ if (gotTheLock) {
   });
 
   app.on('before-quit', (e) => {
+    if (getIsInstallingUpdate()) return;
     if (app.isQuitting && !quitAfterFlush) return;
     if (quitAfterFlush) return;
     e.preventDefault();

@@ -1,10 +1,2 @@
-; Close Notes before install/upgrade so files are not locked.
-!macro preInit
-  nsExec::Exec 'taskkill /F /IM Notes.exe /T'
-  Sleep 1000
-!macroend
-
-!macro customInit
-  nsExec::Exec 'taskkill /F /IM Notes.exe /T'
-  Sleep 500
-!macroend
+; Let electron-builder's built-in CloseApplications handle running instances.
+; Avoid taskkill /F — it force-kills the app during updates and looks like a crash.
