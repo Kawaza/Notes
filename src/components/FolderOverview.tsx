@@ -324,8 +324,8 @@ function TaskRow({
     <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-card px-3 py-2.5 hover:border-primary/30 transition-colors">
       <button
         onClick={() => setShowColors((v) => !v)}
-        className="w-3 h-3 rounded-full shrink-0 border-2 cursor-pointer hover:scale-125 transition-transform"
-        style={{ backgroundColor: color.border, borderColor: color.text }}
+        className="w-2 h-2 rounded-full shrink-0 mr-1 cursor-pointer hover:scale-125 transition-transform"
+        style={{ backgroundColor: color.border }}
         title="Change task color"
       />
       <button onClick={onOpen} className="flex-1 min-w-0 text-left cursor-pointer">
