@@ -21,6 +21,7 @@ interface Store extends AppData {
   hydrated: boolean;
   searchOpen: boolean;
   settingsOpen: boolean;
+  mobileNavOpen: boolean;
   folderDialogRequest: 'secret' | 'link' | null;
   requestFolderDialog: (type: 'secret' | 'link') => void;
   clearFolderDialogRequest: () => void;
@@ -36,6 +37,8 @@ interface Store extends AppData {
   selectNote: (id: string | null) => void;
   setSearchOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
+  setMobileNavOpen: (open: boolean) => void;
+  closeMobileNav: () => void;
   createFolder: (name: string) => void;
   renameFolder: (id: string, name: string) => void;
   updateFolder: (id: string, updates: Partial<Pick<Folder, 'name' | 'calendarColor'>>) => void;
@@ -175,6 +178,7 @@ export const useStore = create<Store>((set, get) => ({
   hydrated: false,
   searchOpen: false,
   settingsOpen: false,
+  mobileNavOpen: false,
   folderDialogRequest: null,
 
   hydrate: async () => {
@@ -290,25 +294,27 @@ export const useStore = create<Store>((set, get) => ({
     scheduleSave(get);
   },
 
-  setViewMode: (viewMode) => set({ viewMode }),
+  setViewMode: (viewMode) => set({ viewMode, mobileNavOpen: false }),
 
   selectAllNotes: () => {
-    set({ selectedFolderId: ALL_NOTES_ID, selectedNoteId: null, viewMode: 'notes' });
+    set({ selectedFolderId: ALL_NOTES_ID, selectedNoteId: null, viewMode: 'notes', mobileNavOpen: false });
     scheduleSave(get);
   },
 
   selectFolder: (selectedFolderId) => {
-    set({ selectedFolderId, selectedNoteId: null, viewMode: 'notes' });
+    set({ selectedFolderId, selectedNoteId: null, viewMode: 'notes', mobileNavOpen: false });
     scheduleSave(get);
   },
 
   selectNote: (selectedNoteId) => {
-    set({ selectedNoteId, viewMode: 'notes' });
+    set({ selectedNoteId, viewMode: 'notes', mobileNavOpen: false });
     scheduleSave(get);
   },
 
   setSearchOpen: (searchOpen) => set({ searchOpen }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setMobileNavOpen: (mobileNavOpen) => set({ mobileNavOpen }),
+  closeMobileNav: () => set({ mobileNavOpen: false }),
   requestFolderDialog: (type) => set({ folderDialogRequest: type }),
   clearFolderDialogRequest: () => set({ folderDialogRequest: null }),
 
@@ -550,11 +556,17 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   moveNote: (noteId, folderId) => {
+    const folder = get().folders.find((f) => f.id === folderId);
     const folderNotes = get().notes.filter((n) => n.folderId === folderId);
     set((s) => ({
-      notes: s.notes.map((n) =>
-        n.id === noteId ? { ...n, folderId, order: folderNotes.length } : n
-      ),
+      notes: s.notes.map((n) => {
+        if (n.id !== noteId) return n;
+        const updates: Partial<typeof n> = { folderId, order: folderNotes.length };
+        if (n.scheduledAt) {
+          updates.calendarColor = folder?.calendarColor ?? 'blue';
+        }
+        return { ...n, ...updates };
+      }),
     }));
     scheduleSave(get);
   },

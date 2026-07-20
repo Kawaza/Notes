@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { format, isPast, isToday, isTomorrow } from 'date-fns';
 import {
   ExternalLink,
@@ -16,14 +16,19 @@ import {
   Terminal,
   Shield,
   Lock,
+  MoreVertical,
+  ChevronLeft,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { QuickLinkDialog } from './QuickLinkDialog';
 import { SecretDialog, getSecretTypeLabel, type SecretFormData } from './SecretDialog';
 import { FolderColorBar } from './FolderColorBar';
+import { ConfirmDialog } from './ConfirmDialog';
 import { CalendarColorPicker } from './CalendarColorPicker';
 import { LinkIcon, getLinkServiceLabel } from './LinkIcon';
 import { getCalendarColor } from '../constants/calendarColors';
+import { OverflowMenu } from './OverflowMenu';
+import { useIsMobile } from '../hooks/useIsMobile';
 import type { FolderLink, FolderSecret, FolderSecretType, Note } from '../types';
 
 function formatTaskDate(dateStr: string) {
@@ -62,6 +67,34 @@ function LinkCard({
   onDelete: () => void;
   onTogglePin: () => void;
 }) {
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const overflowRef = useRef<HTMLButtonElement>(null);
+  const isMobile = useIsMobile();
+
+  const menuItems = [
+    {
+      label: link.pinned ? 'Unpin from sidebar' : 'Pin to sidebar',
+      icon: <Star size={14} className={link.pinned ? 'fill-primary text-primary' : ''} />,
+      onClick: onTogglePin,
+    },
+    {
+      label: 'Edit link',
+      icon: <Pencil size={14} />,
+      onClick: onEdit,
+    },
+    {
+      label: 'Open link',
+      icon: <ExternalLink size={14} />,
+      onClick: () => window.open(link.url, '_blank', 'noopener,noreferrer'),
+    },
+    {
+      label: 'Delete link',
+      icon: <Trash2 size={14} />,
+      danger: true,
+      onClick: onDelete,
+    },
+  ];
+
   return (
     <div className="group flex items-center gap-3 rounded-lg border border-border/60 bg-card px-3 py-2.5 hover:border-primary/30 transition-colors">
       <LinkIcon url={link.url} size={18} />
@@ -78,26 +111,43 @@ function LinkCard({
         </p>
         <p className="text-[11px] text-muted-foreground truncate">{getLinkServiceLabel(link.url)}</p>
       </a>
-      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={onTogglePin}
-          className={`p-1.5 rounded-md cursor-pointer ${
-            link.pinned ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:bg-muted'
-          }`}
-          title={link.pinned ? 'Unpin from sidebar' : 'Pin to sidebar'}
-        >
-          <Star size={13} className={link.pinned ? 'fill-primary' : ''} />
-        </button>
-        <button onClick={onEdit} className="p-1.5 rounded-md text-muted-foreground hover:bg-muted cursor-pointer" title="Edit link">
-          <Pencil size={13} />
-        </button>
-        <button onClick={onDelete} className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer" title="Delete link">
-          <Trash2 size={13} />
-        </button>
-        <a href={link.url} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-md text-muted-foreground hover:bg-muted" title="Open link">
-          <ExternalLink size={13} />
-        </a>
-      </div>
+      {isMobile ? (
+        <>
+          <button
+            ref={overflowRef}
+            type="button"
+            onClick={() => setOverflowOpen((v) => !v)}
+            className="p-1.5 rounded-md text-muted-foreground hover:bg-muted cursor-pointer shrink-0"
+            aria-label="Link options"
+          >
+            <MoreVertical size={16} />
+          </button>
+          {overflowOpen && (
+            <OverflowMenu anchorRef={overflowRef} items={menuItems} onClose={() => setOverflowOpen(false)} />
+          )}
+        </>
+      ) : (
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={onTogglePin}
+            className={`p-1.5 rounded-md cursor-pointer ${
+              link.pinned ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:bg-muted'
+            }`}
+            title={link.pinned ? 'Unpin from sidebar' : 'Pin to sidebar'}
+          >
+            <Star size={13} className={link.pinned ? 'fill-primary' : ''} />
+          </button>
+          <button onClick={onEdit} className="p-1.5 rounded-md text-muted-foreground hover:bg-muted cursor-pointer" title="Edit link">
+            <Pencil size={13} />
+          </button>
+          <button onClick={onDelete} className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer" title="Delete link">
+            <Trash2 size={13} />
+          </button>
+          <a href={link.url} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-md text-muted-foreground hover:bg-muted" title="Open link">
+            <ExternalLink size={13} />
+          </a>
+        </div>
+      )}
     </div>
   );
 }
@@ -115,6 +165,14 @@ function SecretCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [copiedField, setCopiedField] = useState<'username' | 'value' | null>(null);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const overflowRef = useRef<HTMLButtonElement>(null);
+  const isMobile = useIsMobile();
+
+  const secretMenuItems = [
+    { label: 'Edit', icon: <Pencil size={14} />, onClick: onEdit },
+    { label: 'Delete', icon: <Trash2 size={14} />, danger: true, onClick: onDelete },
+  ];
 
   const handleCopyField = async (e: React.MouseEvent, field: 'username' | 'value', text: string) => {
     e.stopPropagation();
@@ -158,28 +216,54 @@ function SecretCard({
         />
 
         <div className="flex items-center gap-0.5 shrink-0">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit();
-            }}
-            className="p-1.5 rounded-md text-muted-foreground hover:bg-muted cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
-            title="Edit"
-          >
-            <Pencil size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
-            title="Delete"
-          >
-            <Trash2 size={13} />
-          </button>
+          {isMobile ? (
+            <>
+              <button
+                ref={overflowRef}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOverflowOpen((v) => !v);
+                }}
+                className="p-1.5 rounded-md text-muted-foreground hover:bg-muted cursor-pointer"
+                aria-label="Credential options"
+              >
+                <MoreVertical size={16} />
+              </button>
+              {overflowOpen && (
+                <OverflowMenu
+                  anchorRef={overflowRef}
+                  items={secretMenuItems}
+                  onClose={() => setOverflowOpen(false)}
+                />
+              )}
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                className="p-1.5 rounded-md text-muted-foreground hover:bg-muted cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Edit"
+              >
+                <Pencil size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Delete"
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -269,9 +353,10 @@ function TaskRow({
 
 interface FolderOverviewProps {
   folderId: string;
+  onMobileBack?: () => void;
 }
 
-export function FolderOverview({ folderId }: FolderOverviewProps) {
+export function FolderOverview({ folderId, onMobileBack }: FolderOverviewProps) {
   const folders = useStore((s) => s.folders);
   const notes = useStore((s) => s.notes);
   const folderLinks = useStore((s) => s.folderLinks);
@@ -293,6 +378,8 @@ export function FolderOverview({ folderId }: FolderOverviewProps) {
   const [secretDialogOpenLocal, setSecretDialogOpenLocal] = useState(false);
   const [editingLink, setEditingLink] = useState<FolderLink | null>(null);
   const [editingSecret, setEditingSecret] = useState<FolderSecret | null>(null);
+  const [deleteLinkTarget, setDeleteLinkTarget] = useState<FolderLink | null>(null);
+  const [deleteSecretTarget, setDeleteSecretTarget] = useState<FolderSecret | null>(null);
 
   const secretDialogOpen = secretDialogOpenLocal;
   const closeSecretDialog = () => {
@@ -396,8 +483,18 @@ export function FolderOverview({ folderId }: FolderOverviewProps) {
       />
 
       <div className="flex-1 overflow-y-auto">
-        <div className="w-full px-8 py-8">
+        <div className="w-full px-4 md:px-8 py-6 md:py-8">
           <div className="mb-8">
+            {onMobileBack && (
+              <button
+                type="button"
+                onClick={onMobileBack}
+                className="md:hidden flex items-center gap-1 mb-3 text-sm text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <ChevronLeft size={18} />
+                Back to notes
+              </button>
+            )}
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Folder</p>
             <h1 className="text-2xl font-bold">{folder.name}</h1>
             <p className="text-sm text-muted-foreground mt-1">
@@ -434,9 +531,7 @@ export function FolderOverview({ folderId }: FolderOverviewProps) {
                       setEditingLink(link);
                       setLinkDialogOpen(true);
                     }}
-                    onDelete={() => {
-                      if (confirm(`Delete link "${link.title}"?`)) deleteFolderLink(link.id);
-                    }}
+                    onDelete={() => setDeleteLinkTarget(link)}
                     onTogglePin={() => togglePinFolderLink(link.id)}
                   />
                 ))}
@@ -466,9 +561,7 @@ export function FolderOverview({ folderId }: FolderOverviewProps) {
                       setEditingSecret(secret);
                       setSecretDialogOpenLocal(true);
                     }}
-                    onDelete={() => {
-                      if (confirm(`Delete credential "${secret.title}"?`)) deleteFolderSecret(secret.id);
-                    }}
+                    onDelete={() => setDeleteSecretTarget(secret)}
                   />
                 ))}
               </div>
@@ -509,6 +602,37 @@ export function FolderOverview({ folderId }: FolderOverviewProps) {
       </div>
 
       <FolderColorBar folderId={folderId} />
+
+      <ConfirmDialog
+        open={!!deleteLinkTarget}
+        title="Delete link?"
+        message={
+          deleteLinkTarget
+            ? `"${deleteLinkTarget.title}" will be permanently deleted.`
+            : ''
+        }
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => {
+          if (deleteLinkTarget) deleteFolderLink(deleteLinkTarget.id);
+        }}
+        onClose={() => setDeleteLinkTarget(null)}
+      />
+      <ConfirmDialog
+        open={!!deleteSecretTarget}
+        title="Delete credential?"
+        message={
+          deleteSecretTarget
+            ? `"${deleteSecretTarget.title}" will be permanently deleted.`
+            : ''
+        }
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => {
+          if (deleteSecretTarget) deleteFolderSecret(deleteSecretTarget.id);
+        }}
+        onClose={() => setDeleteSecretTarget(null)}
+      />
     </div>
   );
 }

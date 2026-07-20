@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   FolderOpen,
   Plus,
@@ -17,6 +17,7 @@ import {
   ArchiveRestore,
   ChevronDown,
   ChevronRight,
+  MoreVertical,
 } from 'lucide-react';
 import { useDroppable } from '@dnd-kit/core';
 import {
@@ -29,7 +30,10 @@ import { useStore } from '../store/useStore';
 import { NotesLogo } from './NotesLogo';
 import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, isFolderArchived, sortableFolderId } from '../types';
 import { ContextMenu } from './ContextMenu';
+import { ConfirmDialog } from './ConfirmDialog';
 import { QuickLinkDialog } from './QuickLinkDialog';
+import { OverflowMenu } from './OverflowMenu';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 function FolderItem({
   id,
@@ -43,8 +47,12 @@ function FolderItem({
   onAddQuickLink: (folderId: string, folderName: string) => void;
 }) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<'archive' | 'delete' | null>(null);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(name);
+  const overflowRef = useRef<HTMLButtonElement>(null);
+  const isMobile = useIsMobile();
 
   const selectFolder = useStore((s) => s.selectFolder);
   const renameFolder = useStore((s) => s.renameFolder);
@@ -101,6 +109,36 @@ function FolderItem({
     onAddQuickLink(id, name);
   };
 
+  const folderMenuItems = [
+    {
+      label: 'Add Quick Link',
+      icon: <Link2 size={14} />,
+      onClick: handleAddLink,
+    },
+    {
+      label: 'Rename',
+      icon: <Pencil size={14} />,
+      onClick: startRename,
+    },
+    {
+      label: 'Archive folder',
+      icon: <Archive size={14} />,
+      disabled: !canArchive,
+      onClick: () => {
+        if (canArchive) setConfirmAction('archive');
+      },
+    },
+    {
+      label: 'Delete',
+      icon: <Trash2 size={14} />,
+      danger: true,
+      disabled: !canDelete,
+      onClick: () => {
+        if (canDelete) setConfirmAction('delete');
+      },
+    },
+  ];
+
   return (
     <>
       <div
@@ -122,7 +160,7 @@ function FolderItem({
         <button
           {...attributes}
           {...listeners}
-          className="opacity-0 group-hover:opacity-40 hover:!opacity-70 cursor-grab active:cursor-grabbing shrink-0 p-0.5 -ml-0.5"
+          className="opacity-0 group-hover:opacity-40 hover:!opacity-70 max-md:opacity-40 cursor-grab active:cursor-grabbing shrink-0 p-0.5 -ml-0.5"
           onClick={(e) => e.stopPropagation()}
         >
           <GripVertical size={12} />
@@ -150,54 +188,66 @@ function FolderItem({
           </span>
         )}
         <span className="text-xs opacity-40 tabular-nums">{noteCount}</span>
+        {isMobile && !editing && (
+          <button
+            ref={overflowRef}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOverflowOpen((v) => !v);
+            }}
+            className="p-1 rounded-md text-muted-foreground hover:bg-muted/80 cursor-pointer shrink-0"
+            aria-label="Folder options"
+          >
+            <MoreVertical size={14} />
+          </button>
+        )}
       </div>
+
+      {overflowOpen && (
+        <OverflowMenu
+          anchorRef={overflowRef}
+          items={folderMenuItems}
+          onClose={() => setOverflowOpen(false)}
+        />
+      )}
 
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
-          items={[
-            {
-              label: 'Add Quick Link',
-              icon: <Link2 size={14} />,
-              onClick: handleAddLink,
-            },
-            {
-              label: 'Rename',
-              icon: <Pencil size={14} />,
-              onClick: startRename,
-            },
-            {
-              label: 'Archive folder',
-              icon: <Archive size={14} />,
-              disabled: !canArchive,
-              onClick: () => {
-                if (canArchive && confirm(`Archive folder "${name}" and all its notes?`)) {
-                  archiveFolder(id);
-                }
-              },
-            },
-            {
-              label: 'Delete',
-              icon: <Trash2 size={14} />,
-              danger: true,
-              disabled: !canDelete,
-              onClick: () => {
-                if (canDelete && confirm(`Delete folder "${name}" and all its notes?`)) {
-                  deleteFolder(id);
-                }
-              },
-            },
-          ]}
+          items={folderMenuItems}
         />
       )}
+
+      <ConfirmDialog
+        open={confirmAction === 'archive'}
+        title="Archive folder?"
+        message={`"${name}" and all ${noteCount} note${noteCount === 1 ? '' : 's'} will be moved to Archive.`}
+        confirmLabel="Archive"
+        onConfirm={() => archiveFolder(id)}
+        onClose={() => setConfirmAction(null)}
+      />
+      <ConfirmDialog
+        open={confirmAction === 'delete'}
+        title="Delete folder?"
+        message={`"${name}" and all ${noteCount} note${noteCount === 1 ? '' : 's'} will be permanently deleted.`}
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => deleteFolder(id)}
+        onClose={() => setConfirmAction(null)}
+      />
     </>
   );
 }
 
 function ArchiveFolderItem({ id, name, isSelected }: { id: string; name: string; isSelected: boolean }) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const overflowRef = useRef<HTMLButtonElement>(null);
+  const isMobile = useIsMobile();
   const selectFolder = useStore((s) => s.selectFolder);
   const deleteFolder = useStore((s) => s.deleteFolder);
   const restoreFolder = useStore((s) => s.restoreFolder);
@@ -206,6 +256,20 @@ function ArchiveFolderItem({ id, name, isSelected }: { id: string; name: string;
     () => notes.filter((n) => n.folderId === id).length,
     [notes, id],
   );
+
+  const archiveMenuItems = [
+    {
+      label: 'Restore to Folders',
+      icon: <ArchiveRestore size={14} />,
+      onClick: () => restoreFolder(id),
+    },
+    {
+      label: 'Delete permanently',
+      icon: <Trash2 size={14} />,
+      danger: true,
+      onClick: () => setShowDeleteConfirm(true),
+    },
+  ];
 
   return (
     <>
@@ -222,32 +286,48 @@ function ArchiveFolderItem({ id, name, isSelected }: { id: string; name: string;
         <Archive size={14} className="shrink-0 opacity-50" />
         <span className="flex-1 truncate">{name}</span>
         <span className="text-xs opacity-40 tabular-nums">{noteCount}</span>
+        {isMobile && (
+          <button
+            ref={overflowRef}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOverflowOpen((v) => !v);
+            }}
+            className="p-1 rounded-md text-muted-foreground hover:bg-muted/80 cursor-pointer shrink-0"
+            aria-label="Folder options"
+          >
+            <MoreVertical size={14} />
+          </button>
+        )}
       </div>
+
+      {overflowOpen && (
+        <OverflowMenu
+          anchorRef={overflowRef}
+          items={archiveMenuItems}
+          onClose={() => setOverflowOpen(false)}
+        />
+      )}
 
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
-          items={[
-            {
-              label: 'Restore to Folders',
-              icon: <ArchiveRestore size={14} />,
-              onClick: () => restoreFolder(id),
-            },
-            {
-              label: 'Delete permanently',
-              icon: <Trash2 size={14} />,
-              danger: true,
-              onClick: () => {
-                if (confirm(`Delete archived folder "${name}" and all its notes permanently?`)) {
-                  deleteFolder(id);
-                }
-              },
-            },
-          ]}
+          items={archiveMenuItems}
         />
       )}
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete folder permanently?"
+        message={`"${name}" and all ${noteCount} note${noteCount === 1 ? '' : 's'} will be permanently deleted.`}
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => deleteFolder(id)}
+        onClose={() => setShowDeleteConfirm(false)}
+      />
     </>
   );
 }
@@ -310,6 +390,7 @@ export function Sidebar() {
   const createNote = useStore((s) => s.createNote);
   const createFolderLink = useStore((s) => s.createFolderLink);
   const setSearchOpen = useStore((s) => s.setSearchOpen);
+  const mobileNavOpen = useStore((s) => s.mobileNavOpen);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
   const notes = useStore((s) => s.notes);
 
@@ -383,7 +464,11 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="flex flex-col w-56 shrink-0 border-r border-border bg-sidebar h-full">
+    <aside
+      className={`flex flex-col w-56 shrink-0 border-r border-border bg-sidebar h-full max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:shadow-xl max-md:transition-transform max-md:duration-200 max-md:ease-out ${
+        mobileNavOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'
+      } md:relative md:translate-x-0`}
+    >
       <QuickLinkDialog
         open={!!linkDialog}
         onClose={() => setLinkDialog(null)}
@@ -398,7 +483,10 @@ export function Sidebar() {
 
       <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
         <button
-          onClick={() => setSearchOpen(true)}
+          onClick={() => {
+            setSearchOpen(true);
+            useStore.getState().closeMobileNav();
+          }}
           className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm hover:bg-muted text-foreground/70 transition-colors cursor-pointer"
         >
           <Search size={16} />

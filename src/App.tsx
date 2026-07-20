@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -15,6 +15,7 @@ import { Sidebar } from './components/Sidebar';
 import { NoteList } from './components/NoteList';
 import { Editor } from './components/Editor';
 import { CalendarView } from './components/CalendarView';
+import { FolderOverview } from './components/FolderOverview';
 import { GlobalSearch } from './components/GlobalSearch';
 import { SettingsPanel } from './components/SettingsPanel';
 import { UpdateBanner } from './components/UpdateUI';
@@ -22,6 +23,7 @@ import { useAppUpdater } from './hooks/useAppUpdater';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { applyPalette } from './constants/palettes';
 import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, SORTABLE_FOLDER_PREFIX, folderIdFromSortable, isFolderArchived } from './types';
+import { useIsMobile } from './hooks/useIsMobile';
 
 export default function App() {
   const {
@@ -44,8 +46,28 @@ export default function App() {
   const reorderFolders = useStore((s) => s.reorderFolders);
   const selectedFolderId = useStore((s) => s.selectedFolderId);
   const selectedNoteId = useStore((s) => s.selectedNoteId);
+  const mobileNavOpen = useStore((s) => s.mobileNavOpen);
+  const setMobileNavOpen = useStore((s) => s.setMobileNavOpen);
+  const selectNote = useStore((s) => s.selectNote);
   const createNote = useStore((s) => s.createNote);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
+
+  const isMobile = useIsMobile();
+  const [mobileFolderPane, setMobileFolderPane] = useState<'notes' | 'overview'>('notes');
+
+  useEffect(() => {
+    setMobileFolderPane('notes');
+  }, [selectedFolderId]);
+
+  const showMobileFolderOverview =
+    isMobile &&
+    viewMode === 'notes' &&
+    !selectedNoteId &&
+    selectedFolderId !== ALL_NOTES_ID &&
+    mobileFolderPane === 'overview';
+  const showMobileNoteList =
+    isMobile && viewMode === 'notes' && !selectedNoteId && !showMobileFolderOverview;
+  const showMobileEditor = isMobile && viewMode === 'notes' && !!selectedNoteId;
 
   useKeyboardShortcuts();
 
@@ -173,10 +195,42 @@ export default function App() {
             setSettingsOpen(true);
           }}
         />
-        <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="flex flex-1 min-h-0 overflow-hidden relative">
+          {isMobile && mobileNavOpen && (
+            <button
+              type="button"
+              className="fixed inset-0 z-30 bg-black/40 md:hidden"
+              onClick={() => setMobileNavOpen(false)}
+              aria-label="Close menu"
+            />
+          )}
           <Sidebar />
           {viewMode === 'calendar' ? (
-            <CalendarView />
+            <CalendarView onOpenNav={() => setMobileNavOpen(true)} />
+          ) : isMobile ? (
+            <>
+              {showMobileNoteList && (
+                <NoteList
+                  onOpenNav={() => setMobileNavOpen(true)}
+                  onShowFolderOverview={() => setMobileFolderPane('overview')}
+                  showFolderOverviewToggle={
+                    !!selectedFolderId && selectedFolderId !== ALL_NOTES_ID
+                  }
+                />
+              )}
+              {showMobileFolderOverview && selectedFolderId && (
+                <FolderOverview
+                  folderId={selectedFolderId}
+                  onMobileBack={() => setMobileFolderPane('notes')}
+                />
+              )}
+              {showMobileEditor && (
+                <Editor
+                  key={selectedNoteId ?? 'none'}
+                  onMobileBack={() => selectNote(null)}
+                />
+              )}
+            </>
           ) : (
             <>
               <NoteList />

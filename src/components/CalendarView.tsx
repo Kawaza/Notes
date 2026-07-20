@@ -6,21 +6,26 @@ import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
 import type { EventClickArg, EventDropArg, DateSelectArg } from '@fullcalendar/core';
 import type { EventResizeDoneArg } from '@fullcalendar/interaction';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2, Archive } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, isFolderArchived } from '../types';
+import { DEFAULT_FOLDER_ID, isFolderArchived } from '../types';
 import { getEventStyle } from '../constants/calendarColors';
 import { Editor } from './Editor';
+import { ContextMenu } from './ContextMenu';
+import { ConfirmDialog } from './ConfirmDialog';
+import { FolderSelect } from './FolderSelect';
+import { MobileNavButton } from './MobileNavButton';
 
-export function CalendarView() {
+export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const notes = useStore((s) => s.notes);
   const folders = useStore((s) => s.folders);
   const theme = useStore((s) => s.theme);
   const updateNote = useStore((s) => s.updateNote);
   const createNote = useStore((s) => s.createNote);
+  const deleteNote = useStore((s) => s.deleteNote);
+  const archiveNote = useStore((s) => s.archiveNote);
   const selectNote = useStore((s) => s.selectNote);
   const setViewMode = useStore((s) => s.setViewMode);
-  const selectedFolderId = useStore((s) => s.selectedFolderId);
 
   const calendarRef = useRef<FullCalendar>(null);
   const calendarContainerRef = useRef<HTMLDivElement>(null);
@@ -30,6 +35,8 @@ export function CalendarView() {
   const [quickFolderId, setQuickFolderId] = useState(DEFAULT_FOLDER_ID);
   const [panelNoteId, setPanelNoteId] = useState<string | null>(null);
   const [timeTick, setTimeTick] = useState(0);
+  const [eventMenu, setEventMenu] = useState<{ x: number; y: number; noteId: string; title: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ noteId: string; title: string } | null>(null);
 
   const isDark = theme === 'dark';
 
@@ -49,7 +56,7 @@ export function CalendarView() {
         return !isFolderArchived(folder);
       })
       .map((n) => {
-        const style = getEventStyle(n.calendarColor, isDark);
+        const style = getEventStyle(getFolderColor(n.folderId), isDark);
         return {
           id: n.id,
           title: n.title || 'Untitled',
@@ -61,11 +68,6 @@ export function CalendarView() {
         };
       });
   }, [notes, folders, isDark]);
-
-  const getFolderId = () =>
-    selectedFolderId && selectedFolderId !== ALL_NOTES_ID
-      ? selectedFolderId
-      : DEFAULT_FOLDER_ID;
 
   const handleEventClick = (info: EventClickArg) => {
     setPanelNoteId(info.event.id);
@@ -91,13 +93,12 @@ export function CalendarView() {
   };
 
   const handleDateSelect = (info: DateSelectArg) => {
-    const folderId = getFolderId();
-    const noteId = createNote(folderId, 'New Task', { keepView: true });
+    const noteId = createNote(DEFAULT_FOLDER_ID, 'New Task', { keepView: true });
     updateNote(noteId, {
       scheduledAt: info.start.toISOString(),
       scheduledEnd: info.end?.toISOString(),
       isTask: true,
-      calendarColor: getFolderColor(folderId),
+      calendarColor: getFolderColor(DEFAULT_FOLDER_ID),
     });
     openTaskPanel(noteId);
     calendarRef.current?.getApi().unselect();
@@ -127,6 +128,29 @@ export function CalendarView() {
     setPanelNoteId(null);
   };
 
+  const confirmDeleteEvent = () => {
+    if (!deleteTarget) return;
+    deleteNote(deleteTarget.noteId);
+    if (panelNoteId === deleteTarget.noteId) {
+      setPanelNoteId(null);
+    }
+    setDeleteTarget(null);
+  };
+
+  const handleArchiveEvent = (noteId: string) => {
+    archiveNote(noteId);
+    if (panelNoteId === noteId) {
+      setPanelNoteId(null);
+    }
+  };
+
+  const canArchiveEvent = (noteId: string) => {
+    const note = notes.find((n) => n.id === noteId);
+    if (!note) return false;
+    const folder = folders.find((f) => f.id === note.folderId);
+    return folder && !isFolderArchived(folder);
+  };
+
   const slotLaneClassNames = useCallback(
     (arg: { date?: Date }) => {
       void timeTick;
@@ -137,34 +161,37 @@ export function CalendarView() {
       const slotMinutes = arg.date.getHours() * 60 + arg.date.getMinutes();
       return slotMinutes === currentSlot ? ['fc-current-slot'] : [];
     },
-    [timeTick]
+    [timeTick],
   );
 
   return (
     <div className="flex-1 flex h-full bg-background overflow-hidden">
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
-          <div>
-            <h2 className="text-lg font-medium">Calendar</h2>
-            <p className="text-sm text-muted-foreground font-normal">
-              Drag to reschedule · Click to edit · Double-click to rename
-            </p>
+        <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-border shrink-0 gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            {onOpenNav && <MobileNavButton onClick={onOpenNav} />}
+            <div className="min-w-0">
+              <h2 className="text-lg font-medium">Calendar</h2>
+              <p className="text-sm text-muted-foreground font-normal hidden sm:block">
+                Drag to reschedule · Click to edit · Right-click for options
+              </p>
+            </div>
           </div>
           <button
             onClick={() => {
-              setQuickFolderId(getFolderId());
+              setQuickFolderId(DEFAULT_FOLDER_ID);
               setShowQuickAdd(true);
             }}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-normal hover:opacity-90 transition-opacity cursor-pointer"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-normal hover:opacity-90 transition-opacity cursor-pointer shrink-0"
           >
             <Plus size={16} />
-            New Task
+            <span className="hidden sm:inline">New Task</span>
           </button>
         </div>
 
         {showQuickAdd && (
-          <div className="px-6 py-3 border-b border-border bg-muted/30 space-y-3 shrink-0">
-            <div className="flex items-center gap-3">
+          <div className="px-4 md:px-6 py-3 border-b border-border bg-muted/30 space-y-3 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 md:gap-3">
               <input
                 autoFocus
                 placeholder="Task title..."
@@ -176,18 +203,11 @@ export function CalendarView() {
                 }}
                 className="flex-1 px-3 py-2 text-sm rounded-md bg-background border border-border outline-none focus:ring-1 focus:ring-primary/40"
               />
-              <select
+              <FolderSelect
                 value={quickFolderId}
-                onChange={(e) => setQuickFolderId(e.target.value)}
-                className="px-2.5 py-2 text-sm rounded-md bg-background border border-border outline-none focus:ring-1 focus:ring-primary/40 max-w-[140px] cursor-pointer"
-                title="Folder"
-              >
-                {folders.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setQuickFolderId}
+                size="md"
+              />
               <button
                 onClick={handleQuickAdd}
                 className="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:opacity-90 cursor-pointer"
@@ -204,7 +224,7 @@ export function CalendarView() {
           </div>
         )}
 
-        <div ref={calendarContainerRef} className="flex-1 p-4 calendar-container overflow-auto min-h-0">
+        <div ref={calendarContainerRef} className="flex-1 p-2 md:p-4 calendar-container overflow-auto min-h-0">
           <FullCalendar
             ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
@@ -232,7 +252,7 @@ export function CalendarView() {
             eventDurationEditable
             eventDidMount={(info) => {
               info.el.dataset.noteId = info.event.id;
-              info.el.title = 'Click to edit · Double-click to rename';
+              info.el.title = 'Click to edit · Right-click for options';
               info.el.addEventListener('dblclick', (e) => {
                 e.stopPropagation();
                 const newTitle = prompt('Rename task:', info.event.title);
@@ -240,13 +260,23 @@ export function CalendarView() {
                   updateNote(info.event.id, { title: newTitle.trim() });
                 }
               });
+              info.el.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setEventMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  noteId: info.event.id,
+                  title: info.event.title || 'Untitled',
+                });
+              });
             }}
           />
         </div>
       </div>
 
       {panelNoteId && (
-        <aside className="w-[500px] shrink-0 border-l border-border flex flex-col bg-background shadow-lg">
+        <aside className="max-md:fixed max-md:inset-0 max-md:z-50 w-full md:w-[500px] shrink-0 border-l border-border flex flex-col bg-background shadow-lg">
           <Editor
             key={panelNoteId}
             noteId={panelNoteId}
@@ -257,6 +287,43 @@ export function CalendarView() {
         </aside>
       )}
 
+      {eventMenu && (
+        <ContextMenu
+          x={eventMenu.x}
+          y={eventMenu.y}
+          onClose={() => setEventMenu(null)}
+          items={[
+            {
+              label: 'Archive',
+              icon: <Archive size={14} />,
+              disabled: !canArchiveEvent(eventMenu.noteId),
+              onClick: () => handleArchiveEvent(eventMenu.noteId),
+            },
+            {
+              label: 'Delete',
+              icon: <Trash2 size={14} />,
+              danger: true,
+              onClick: () => {
+                setDeleteTarget({ noteId: eventMenu.noteId, title: eventMenu.title });
+              },
+            },
+          ]}
+        />
+      )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete task?"
+        message={
+          deleteTarget
+            ? `"${deleteTarget.title}" will be permanently deleted.`
+            : ''
+        }
+        confirmLabel="Delete"
+        danger
+        onConfirm={confirmDeleteEvent}
+        onClose={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { Trash2, Pin, FileCode2, Maximize2, X, File, Download, Copy, Archive } from 'lucide-react';
+import { Trash2, Pin, FileCode2, Maximize2, X, File, Download, Copy, Archive, ChevronLeft } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { TaskSchedulePanel } from './TaskSchedulePanel';
 import { TagInput } from './TagInput';
@@ -14,6 +14,7 @@ interface EditorProps {
   compact?: boolean;
   onExpand?: () => void;
   onClose?: () => void;
+  onMobileBack?: () => void;
 }
 
 function isImageAttachment(attachment: NoteAttachment) {
@@ -27,7 +28,7 @@ function downloadAttachment(attachment: NoteAttachment) {
   a.click();
 }
 
-export function Editor({ noteId: noteIdProp, compact, onExpand, onClose }: EditorProps = {}) {
+export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobileBack }: EditorProps = {}) {
   const selectedNoteId = useStore((s) => s.selectedNoteId);
   const selectedFolderId = useStore((s) => s.selectedFolderId);
   const activeNoteId = noteIdProp ?? selectedNoteId;
@@ -126,21 +127,33 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose }: Edito
     );
   }
 
-  const padding = compact ? 'px-4' : 'px-8';
+  const padding = compact ? 'px-4' : onMobileBack ? 'px-4 md:px-8' : 'px-8';
 
   return (
     <div className={`flex flex-col bg-background h-full overflow-hidden ${compact ? '' : 'flex-1'}`}>
-      <div className={`flex items-center justify-between ${padding} pt-4 pb-2 border-b border-border/50`}>
-        <div className="flex-1 min-w-0">
-          {!compact && folder && <p className="text-xs text-muted-foreground mb-1">{folder.name}</p>}
-          <input
-            value={note.title}
-            onChange={(e) => handleTitleChange(e.target.value)}
-            placeholder="Untitled"
-            className={`w-full font-bold bg-transparent outline-none placeholder:text-muted-foreground/40 ${
-              compact ? 'text-lg' : 'text-2xl'
-            }`}
-          />
+      <div className={`flex items-center justify-between ${padding} pt-4 pb-2 border-b border-border/50 gap-2`}>
+        <div className="flex items-center gap-1 min-w-0 flex-1">
+          {onMobileBack && (
+            <button
+              type="button"
+              onClick={onMobileBack}
+              className="md:hidden p-2 -ml-1 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer shrink-0"
+              aria-label="Back to notes"
+            >
+              <ChevronLeft size={20} />
+            </button>
+          )}
+          <div className="flex-1 min-w-0">
+            {!compact && folder && <p className="text-xs text-muted-foreground mb-1">{folder.name}</p>}
+            <input
+              value={note.title}
+              onChange={(e) => handleTitleChange(e.target.value)}
+              placeholder="Untitled"
+              className={`w-full font-bold bg-transparent outline-none placeholder:text-muted-foreground/40 ${
+                compact ? 'text-lg' : 'text-xl md:text-2xl'
+              }`}
+            />
+          </div>
         </div>
         <div className="flex items-center gap-1 shrink-0 ml-2">
           {compact && onExpand && (
@@ -276,7 +289,7 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose }: Edito
                   )}
                   <button
                     onClick={() => removeAttachment(note.id, a.id)}
-                    className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-destructive text-white text-xs opacity-0 group-hover:opacity-100 cursor-pointer flex items-center justify-center"
+                    className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-destructive text-white text-xs opacity-0 group-hover:opacity-100 max-md:opacity-100 cursor-pointer flex items-center justify-center"
                   >
                     ×
                   </button>

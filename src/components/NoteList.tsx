@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { LinkIcon } from './LinkIcon';
-import { Plus, GripVertical, CalendarClock, Star, Trash2, Pencil, PinOff, Copy, Archive } from 'lucide-react';
+import { Plus, GripVertical, CalendarClock, Star, Trash2, Pencil, PinOff, Copy, Archive, MoreVertical } from 'lucide-react';
 import {
   SortableContext,
   useSortable,
@@ -13,8 +13,12 @@ import { stripContent } from '../utils/markdown';
 import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, isFolderArchived } from '../types';
 import type { Note, FolderLink } from '../types';
 import { ContextMenu } from './ContextMenu';
+import { ConfirmDialog } from './ConfirmDialog';
 import { AddItemMenu } from './AddItemMenu';
 import { QuickLinkDialog } from './QuickLinkDialog';
+import { OverflowMenu } from './OverflowMenu';
+import { MobileNavButton } from './MobileNavButton';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 function getNewNoteFolderId(selectedFolderId: string | null): string {
   return selectedFolderId && selectedFolderId !== ALL_NOTES_ID
@@ -64,6 +68,10 @@ function NoteListItemContent({
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(note.title);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const overflowRef = useRef<HTMLButtonElement>(null);
+  const isMobile = useIsMobile();
 
   const selectNote = useStore((s) => s.selectNote);
   const updateNote = useStore((s) => s.updateNote);
@@ -93,10 +101,33 @@ function NoteListItemContent({
   };
 
   const handleDelete = () => {
-    if (confirm(`Delete "${displayTitle}"?`)) {
-      deleteNote(note.id);
-    }
+    setShowDeleteConfirm(true);
   };
+
+  const noteMenuItems = [
+    {
+      label: 'Rename',
+      icon: <Pencil size={14} />,
+      onClick: startRename,
+    },
+    {
+      label: 'Duplicate',
+      icon: <Copy size={14} />,
+      onClick: () => duplicateNote(note.id),
+    },
+    {
+      label: 'Archive',
+      icon: <Archive size={14} />,
+      disabled: !canArchive,
+      onClick: () => archiveNote(note.id),
+    },
+    {
+      label: 'Delete',
+      icon: <Trash2 size={14} />,
+      danger: true,
+      onClick: handleDelete,
+    },
+  ];
 
   return (
     <>
@@ -156,39 +187,48 @@ function NoteListItemContent({
           )}
           <p className="text-[11px] text-muted-foreground/60 mt-1">{timeAgo}</p>
         </div>
+        {isMobile && !editing && (
+          <button
+            ref={overflowRef}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOverflowOpen((v) => !v);
+            }}
+            className="self-start p-1.5 rounded-md text-muted-foreground hover:bg-muted cursor-pointer shrink-0"
+            aria-label="Note options"
+          >
+            <MoreVertical size={16} />
+          </button>
+        )}
       </div>
+
+      {overflowOpen && (
+        <OverflowMenu
+          anchorRef={overflowRef}
+          items={noteMenuItems}
+          onClose={() => setOverflowOpen(false)}
+        />
+      )}
 
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
-          items={[
-            {
-              label: 'Rename',
-              icon: <Pencil size={14} />,
-              onClick: startRename,
-            },
-            {
-              label: 'Duplicate',
-              icon: <Copy size={14} />,
-              onClick: () => duplicateNote(note.id),
-            },
-            {
-              label: 'Archive',
-              icon: <Archive size={14} />,
-              disabled: !canArchive,
-              onClick: () => archiveNote(note.id),
-            },
-            {
-              label: 'Delete',
-              icon: <Trash2 size={14} />,
-              danger: true,
-              onClick: handleDelete,
-            },
-          ]}
+          items={noteMenuItems}
         />
       )}
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete note?"
+        message={`"${displayTitle}" will be permanently deleted.`}
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => deleteNote(note.id)}
+        onClose={() => setShowDeleteConfirm(false)}
+      />
     </>
   );
 }
@@ -224,35 +264,58 @@ function PinnedLinksSection({ folderId }: { folderId: string }) {
 
 function PinnedLinkRow({ link, onUnpin }: { link: FolderLink; onUnpin: () => void }) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const overflowRef = useRef<HTMLButtonElement>(null);
+  const isMobile = useIsMobile();
+
+  const menuItems = [
+    {
+      label: 'Unpin from sidebar',
+      icon: <PinOff size={14} />,
+      onClick: onUnpin,
+    },
+  ];
 
   return (
     <>
-      <a
-        href={link.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setContextMenu({ x: e.clientX, y: e.clientY });
-        }}
-        className="flex items-center gap-2 text-xs text-foreground/80 hover:text-primary truncate py-1 group"
-      >
-        <LinkIcon url={link.url} size={14} className="!w-7 !h-7 rounded-md" />
-        <span className="truncate flex-1">{link.title}</span>
-        <Star size={10} className="shrink-0 text-primary fill-primary opacity-60 group-hover:opacity-100" />
-      </a>
+      <div className="flex items-center gap-1 group">
+        <a
+          href={link.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setContextMenu({ x: e.clientX, y: e.clientY });
+          }}
+          className="flex flex-1 items-center gap-2 text-xs text-foreground/80 hover:text-primary truncate py-1 min-w-0"
+        >
+          <LinkIcon url={link.url} size={14} className="!w-7 !h-7 rounded-md" />
+          <span className="truncate flex-1">{link.title}</span>
+          <Star size={10} className="shrink-0 text-primary fill-primary opacity-60 group-hover:opacity-100 max-md:opacity-100" />
+        </a>
+        {isMobile && (
+          <>
+            <button
+              ref={overflowRef}
+              type="button"
+              onClick={() => setOverflowOpen((v) => !v)}
+              className="p-1 rounded-md text-muted-foreground hover:bg-muted cursor-pointer shrink-0"
+              aria-label="Link options"
+            >
+              <MoreVertical size={14} />
+            </button>
+            {overflowOpen && (
+              <OverflowMenu anchorRef={overflowRef} items={menuItems} onClose={() => setOverflowOpen(false)} />
+            )}
+          </>
+        )}
+      </div>
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
-          items={[
-            {
-              label: 'Unpin from sidebar',
-              icon: <PinOff size={14} />,
-              onClick: onUnpin,
-            },
-          ]}
+          items={menuItems}
         />
       )}
     </>
@@ -280,7 +343,7 @@ function SortableNoteListItem({
     <button
       {...attributes}
       {...listeners}
-      className="mt-0.5 opacity-0 group-hover:opacity-40 hover:!opacity-70 cursor-grab active:cursor-grabbing shrink-0"
+      className="mt-0.5 opacity-0 group-hover:opacity-40 hover:!opacity-70 max-md:opacity-40 cursor-grab active:cursor-grabbing shrink-0"
       onClick={(e) => e.stopPropagation()}
     >
       <GripVertical size={14} />
@@ -298,7 +361,15 @@ function SortableNoteListItem({
   );
 }
 
-export function NoteList() {
+export function NoteList({
+  onOpenNav,
+  onShowFolderOverview,
+  showFolderOverviewToggle = false,
+}: {
+  onOpenNav?: () => void;
+  onShowFolderOverview?: () => void;
+  showFolderOverviewToggle?: boolean;
+} = {}) {
   const selectedFolderId = useStore((s) => s.selectedFolderId);
   const selectedNoteId = useStore((s) => s.selectedNoteId);
   const folders = useStore((s) => s.folders);
@@ -325,22 +396,36 @@ export function NoteList() {
   };
 
   return (
-    <div className="flex flex-col w-72 shrink-0 border-r border-border bg-background h-full">
-      <div className="flex items-center justify-between px-4 py-3.5 border-b border-border">
-        <div>
-          <h2 className="text-sm font-semibold">{listTitle}</h2>
-          <p className="text-xs text-muted-foreground">{notes.length} notes</p>
+    <div className="flex flex-col w-full md:w-72 shrink-0 border-r border-border bg-background h-full">
+      <div className="flex items-center justify-between px-3 md:px-4 py-3.5 border-b border-border gap-2">
+        <div className="flex items-center gap-1 min-w-0 flex-1">
+          {onOpenNav && <MobileNavButton onClick={onOpenNav} />}
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold truncate">{listTitle}</h2>
+            <p className="text-xs text-muted-foreground">{notes.length} notes</p>
+          </div>
         </div>
-        <button
-          ref={addButtonRef}
-          onClick={() => {
-            if (showAll) handleNewNote();
-            else setShowAddMenu((v) => !v);
-          }}
-          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-        >
-          <Plus size={18} />
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          {showFolderOverviewToggle && onShowFolderOverview && (
+            <button
+              type="button"
+              onClick={onShowFolderOverview}
+              className="md:hidden px-2 py-1 text-[11px] rounded-md border border-border text-muted-foreground hover:bg-muted cursor-pointer"
+            >
+              Folder
+            </button>
+          )}
+          <button
+            ref={addButtonRef}
+            onClick={() => {
+              if (showAll) handleNewNote();
+              else setShowAddMenu((v) => !v);
+            }}
+            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          >
+            <Plus size={18} />
+          </button>
+        </div>
       </div>
 
       {showAddMenu && !showAll && (

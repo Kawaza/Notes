@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { CalendarClock, X } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { Note } from '../types';
+import { FolderSelect } from './FolderSelect';
 
 function formatScheduleDisplay(note: Note) {
   if (!note.scheduledAt) return '';
@@ -41,7 +42,7 @@ export function TaskSchedulePanel({
       scheduledAt,
       scheduledEnd,
       isTask: true,
-      calendarColor: note.calendarColor ?? folder?.calendarColor ?? 'blue',
+      calendarColor: folder?.calendarColor ?? 'blue',
     });
   };
 
@@ -69,18 +70,11 @@ export function TaskSchedulePanel({
     'px-1.5 py-1 text-xs rounded-md bg-background border border-border outline-none focus:ring-1 focus:ring-primary/40 min-w-0';
 
   const folderSelect = (
-    <select
+    <FolderSelect
       value={note.folderId}
-      onChange={(e) => moveNote(note.id, e.target.value)}
-      className="text-xs px-1.5 py-1 rounded-md bg-background border border-border outline-none max-w-[110px] shrink-0 cursor-pointer truncate"
-      title="Folder"
-    >
-      {folders.map((f) => (
-        <option key={f.id} value={f.id}>
-          {f.name}
-        </option>
-      ))}
-    </select>
+      onChange={(folderId) => moveNote(note.id, folderId)}
+      size="sm"
+    />
   );
 
   const closeEditing = () => {
