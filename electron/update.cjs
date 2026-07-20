@@ -21,7 +21,9 @@ function setupAutoUpdater(win) {
   autoUpdater.disableDifferentialDownload = true;
 
   autoUpdater.on('checking-for-update', () => {
-    sendStatus({ type: 'checking' });
+    if (manualCheckPending) {
+      sendStatus({ type: 'checking' });
+    }
   });
 
   autoUpdater.on('update-available', (info) => {
@@ -34,12 +36,16 @@ function setupAutoUpdater(win) {
   });
 
   autoUpdater.on('update-not-available', () => {
-    sendStatus({ type: 'not-available' });
+    if (manualCheckPending) {
+      sendStatus({ type: 'not-available' });
+    }
     manualCheckPending = false;
   });
 
   autoUpdater.on('error', (err) => {
-    sendStatus({ type: 'error', message: err?.message ?? 'Update failed' });
+    if (manualCheckPending) {
+      sendStatus({ type: 'error', message: err?.message ?? 'Update failed' });
+    }
     manualCheckPending = false;
   });
 
@@ -56,8 +62,18 @@ function setupAutoUpdater(win) {
     sendStatus({ type: 'downloaded', version: info.version });
   });
 
-  // Don't auto-check on launch — a new GitHub release shouldn't interrupt the app.
-  // Users check manually from Settings or the tray menu.
+  // Standard practice: check silently in the background, notify when an update exists.
+  // User still chooses when to download and restart — no auto-install.
+  const INITIAL_CHECK_DELAY_MS = 60_000;
+  const PERIODIC_CHECK_MS = 4 * 60 * 60 * 1000;
+
+  setTimeout(() => {
+    void checkForUpdates(false);
+  }, INITIAL_CHECK_DELAY_MS);
+
+  setInterval(() => {
+    void checkForUpdates(false);
+  }, PERIODIC_CHECK_MS);
 }
 
 async function checkForUpdates(manual = true) {
