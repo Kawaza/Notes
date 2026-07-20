@@ -26,7 +26,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useStore } from '../store/useStore';
-import { assetUrl } from '../utils/assetUrl';
+import { NotesLogo } from './NotesLogo';
 import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, isFolderArchived, sortableFolderId } from '../types';
 import { ContextMenu } from './ContextMenu';
 import { QuickLinkDialog } from './QuickLinkDialog';
@@ -393,16 +393,7 @@ export function Sidebar() {
         folderName={linkDialog?.folderName}
       />
       <div className="flex items-center px-4 py-4 border-b border-border">
-        <img
-          src={assetUrl('logo-horizontal.svg')}
-          alt="Notes"
-          className="h-7 w-auto dark:hidden"
-        />
-        <img
-          src={assetUrl('logo-horizontal-dark.svg')}
-          alt="Notes"
-          className="h-7 w-auto hidden dark:block"
-        />
+        <NotesLogo />
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">

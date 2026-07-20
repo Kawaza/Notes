@@ -115,6 +115,7 @@ declare global {
       checkForUpdates: () => Promise<unknown>;
       downloadUpdate: () => Promise<unknown>;
       installUpdate: () => Promise<void>;
+      setBrandIcons: (palette: string, theme: Theme) => Promise<void>;
       onUpdateEvent: (
         callback: (event: {
           type: string;

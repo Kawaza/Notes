@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 192" fill="none">
-  <rect width="192" height="192" rx="36" fill="#2B2B2B"/>
-  <circle cx="138" cy="54" r="16" fill="#FFFFFF"/>
-  <path d="M0 192 L0 132 L60 192 Z" fill="#FFFFFF"/>
-  <text x="228" y="128" fill="#2B2B2B" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="96" font-weight="700" letter-spacing="-2">Notes</text>
-</svg>

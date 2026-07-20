@@ -2,12 +2,15 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } = require('electr
 const path = require('path');
 const fs = require('fs');
 const { setupAutoUpdater, checkForUpdates, downloadUpdate, installUpdate, getIsInstallingUpdate } = require('./update.cjs');
+const { getTrayIcon, getWindowIcon } = require('./icon-utils.cjs');
 
 app.setName('Notes');
 
 const isDev = !app.isPackaged;
 let mainWindow;
 let tray;
+let brandPalette = 'default';
+let brandTheme = 'light';
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -57,22 +60,21 @@ function requestQuitAfterFlush() {
   app.exit(0);
 }
 
-function createTrayIcon() {
-  const iconPath = path.join(__dirname, 'icons', 'icon.png');
-  const image = nativeImage.createFromPath(iconPath);
-  if (!image.isEmpty()) {
-    return image.resize({ width: 16, height: 16 });
+function applyBrandIcons() {
+  const trayIcon = getTrayIcon(brandPalette, brandTheme);
+  if (tray && !trayIcon.isEmpty()) {
+    tray.setImage(trayIcon);
   }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const windowIcon = getWindowIcon(brandPalette, brandTheme);
+    if (!windowIcon.isEmpty()) {
+      mainWindow.setIcon(windowIcon);
+    }
+  }
+}
 
-  // Fallback: inline SVG matching the app logo
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 192 192" fill="none">
-    <rect width="192" height="192" rx="36" fill="#2B2B2B"/>
-    <circle cx="138" cy="54" r="16" fill="#FFFFFF"/>
-    <path d="M0 192 L0 132 L60 192 Z" fill="#FFFFFF"/>
-  </svg>`;
-  return nativeImage.createFromDataURL(
-    `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`,
-  );
+function createTrayIcon() {
+  return getTrayIcon(brandPalette, brandTheme);
 }
 
 function showMainWindow() {
@@ -98,7 +100,7 @@ function createWindow() {
     minHeight: 600,
     show: false,
     title: 'Notes',
-    icon: path.join(__dirname, 'icons', 'icon.png'),
+    icon: getWindowIcon(brandPalette, brandTheme),
     backgroundColor: '#ffffff',
     autoHideMenuBar: true,
     webPreferences: {
@@ -220,6 +222,11 @@ ipcMain.handle('install-update', () => {
     tray = null;
   }
   installUpdate();
+});
+ipcMain.handle('set-brand-icons', (_event, { palette, theme }) => {
+  if (typeof palette === 'string') brandPalette = palette;
+  if (theme === 'light' || theme === 'dark') brandTheme = theme;
+  applyBrandIcons();
 });
 ipcMain.handle('get-app-version', () => app.getVersion());
 

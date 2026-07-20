@@ -68,6 +68,7 @@ export default function App() {
 
   useEffect(() => {
     applyPalette(colorPalette, theme);
+    window.electronAPI?.setBrandIcons?.(colorPalette, theme);
   }, [theme, colorPalette]);
 
   useEffect(() => {

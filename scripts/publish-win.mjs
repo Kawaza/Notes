@@ -30,4 +30,5 @@ const env = {
 
 console.log('Building and publishing to GitHub Releases…');
 run('npm run build', env);
+run('npm run generate:icons', env);
 run('electron-builder --win --publish always', env);
