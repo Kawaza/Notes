@@ -16,6 +16,7 @@ function setupAutoUpdater(win) {
 
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.autoRunAppAfterInstall = true;
 
   autoUpdater.on('checking-for-update', () => {
     sendStatus({ type: 'checking' });
@@ -75,14 +76,7 @@ function installUpdate() {
   const { app } = require('electron');
   isInstallingUpdate = true;
   app.isQuitting = true;
-
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('flush-save');
-  }
-
-  setTimeout(() => {
-    autoUpdater.quitAndInstall(false, true);
-  }, 600);
+  autoUpdater.quitAndInstall(true, true);
 }
 
 function getIsInstallingUpdate() {

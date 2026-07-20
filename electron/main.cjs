@@ -201,13 +201,20 @@ ipcMain.handle('has-data-file', () => {
 ipcMain.handle('get-data-path', () => getDataPath());
 
 ipcMain.on('flush-save-done', () => {
+  if (getIsInstallingUpdate()) return;
   quitAfterFlush = false;
   app.exit(0);
 });
 
 ipcMain.handle('check-for-updates', () => checkForUpdates(true));
 ipcMain.handle('download-update', () => downloadUpdate());
-ipcMain.handle('install-update', () => installUpdate());
+ipcMain.handle('install-update', () => {
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
+  installUpdate();
+});
 ipcMain.handle('get-app-version', () => app.getVersion());
 
 if (gotTheLock) {
