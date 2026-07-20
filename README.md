@@ -38,7 +38,7 @@ A free, local note-taking desktop app inspired by Notion and Obsidian.
 
 ```bash
 npm install
-npm run dev          # Browser at http://localhost:5173
+npm run dev          
 npm run electron:dev # Desktop app
 npm run electron:build:win  # Build Windows .exe
 ```
@@ -48,11 +48,5 @@ npm run electron:build:win  # Build Windows .exe
 | Shortcut | Action |
 |----------|--------|
 | `Ctrl+K` | Search |
-| `Ctrl+N` | New note (template picker) |
+| `Ctrl+N` | New note |
 | `Ctrl+Shift+D` | Toggle light/dark |
-
-## Data Location
-
-Desktop app: `%APPDATA%/notes/notes-data.json`
-
-Browser dev mode: `localStorage`
