@@ -1,10 +1,17 @@
-import { NotesLogoIcon } from './NotesLogoIcon';
+import { useStore } from '../store/useStore';
+import logoHorizontal from '../assets/brand/logo-horizontal.svg';
 
 export function NotesLogo() {
+  const theme = useStore((s) => s.theme);
+
   return (
-    <div className="flex items-center gap-2.5">
-      <NotesLogoIcon size={28} />
-      <span className="font-semibold text-sm tracking-tight text-foreground">Notes</span>
+    <div className="p-[13px]">
+      <img
+        src={logoHorizontal}
+        alt="Notes"
+        className={`w-[130px] h-auto ${theme === 'dark' ? 'brightness-0 invert' : ''}`}
+        draggable={false}
+      />
     </div>
   );
 }

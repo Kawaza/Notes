@@ -1,6 +1,5 @@
 /**
- * Build tray/window/installer PNG icons from the logo SVG template.
- * Run before electron-builder so Windows gets real PNG icons (not SVG in tray).
+ * Build tray/window/favicon PNG icons from the brand logo icon.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,34 +21,48 @@ const PALETTE_PRIMARY = {
   yellow: { light: '#eab308', dark: '#facc15' },
 };
 
-function logoSvg(primary) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" fill="none">
-  <rect width="192" height="192" rx="36" fill="${primary}"/>
-  <circle cx="138" cy="54" r="16" fill="#ffffff"/>
-  <path d="M0 192L0 132L60 192Z" fill="#ffffff"/>
-</svg>`;
-}
-
-async function writePng(svg, outPath, size) {
-  await sharp(Buffer.from(svg)).resize(size, size).png().toFile(outPath);
-}
-
+const logoSvgPath = path.join(root, 'src', 'assets', 'brand', 'logo-icon.svg');
+const logoSvg = fs.readFileSync(logoSvgPath);
+const publicDir = path.join(root, 'public');
 const iconsDir = path.join(root, 'electron', 'icons');
 const buildDir = path.join(root, 'build');
+
+fs.mkdirSync(publicDir, { recursive: true });
 fs.mkdirSync(iconsDir, { recursive: true });
 fs.mkdirSync(buildDir, { recursive: true });
 
-for (const [palette, themes] of Object.entries(PALETTE_PRIMARY)) {
-  for (const [theme, color] of Object.entries(themes)) {
-    const svg = logoSvg(color);
+async function prepareSource(invert = false) {
+  let pipeline = sharp(logoSvg, { density: 300 }).trim({ threshold: 12 });
+  if (invert) {
+    pipeline = pipeline.negate({ alpha: false });
+  }
+  return pipeline.png().toBuffer();
+}
+
+async function writeIcon(source, outPath, size) {
+  await sharp(source)
+    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toFile(outPath);
+}
+
+const lightSource = await prepareSource(false);
+const darkSource = await prepareSource(true);
+
+for (const palette of Object.keys(PALETTE_PRIMARY)) {
+  for (const theme of Object.keys(PALETTE_PRIMARY[palette])) {
+    const source = theme === 'dark' ? darkSource : lightSource;
     const base = path.join(iconsDir, `${palette}-${theme}`);
-    await writePng(svg, `${base}-16.png`, 16);
-    await writePng(svg, `${base}-32.png`, 32);
-    await writePng(svg, `${base}-256.png`, 256);
+    await writeIcon(source, `${base}-16.png`, 16);
+    await writeIcon(source, `${base}-32.png`, 32);
+    await writeIcon(source, `${base}-256.png`, 256);
   }
 }
 
-await writePng(logoSvg(PALETTE_PRIMARY.default.light), path.join(buildDir, 'icon.png'), 512);
-await writePng(logoSvg(PALETTE_PRIMARY.default.light), path.join(iconsDir, 'icon.png'), 256);
+await writeIcon(lightSource, path.join(buildDir, 'icon.png'), 512);
+await writeIcon(lightSource, path.join(iconsDir, 'icon.png'), 256);
+await writeIcon(lightSource, path.join(publicDir, 'favicon.png'), 512);
+await writeIcon(darkSource, path.join(publicDir, 'favicon-dark.png'), 512);
+await writeIcon(lightSource, path.join(publicDir, 'logo-icon.png'), 512);
 
-console.log('Generated app icons in electron/icons and build/icon.png');
+console.log('Generated app icons from brand SVG');

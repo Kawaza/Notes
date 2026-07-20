@@ -392,7 +392,7 @@ export function Sidebar() {
         }}
         folderName={linkDialog?.folderName}
       />
-      <div className="flex items-center px-4 py-4 border-b border-border">
+      <div className="border-b border-border">
         <NotesLogo />
       </div>
 

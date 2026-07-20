@@ -11,10 +11,24 @@ import {
 } from '../utils/exportImport';
 import type { ColorPalette } from '../types';
 import { DEFAULT_FOLDER_ID } from '../types';
-import { useUpdate } from '../context/UpdateContext';
+import type { UpdateUiState } from '../hooks/useAppUpdater';
 import { UpdateSettingsSection } from './UpdateUI';
 
-export function SettingsPanel() {
+type SettingsPanelProps = {
+  updateState: UpdateUiState;
+  isElectron: boolean;
+  checkForUpdates: () => void;
+  downloadUpdate: () => void;
+  installUpdate: () => void | Promise<void>;
+};
+
+export function SettingsPanel({
+  updateState,
+  isElectron,
+  checkForUpdates,
+  downloadUpdate,
+  installUpdate,
+}: SettingsPanelProps) {
   const settingsOpen = useStore((s) => s.settingsOpen);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
   const theme = useStore((s) => s.theme);
@@ -27,14 +41,6 @@ export function SettingsPanel() {
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const mdInputRef = useRef<HTMLInputElement>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
-
-  const {
-    state: updateState,
-    isElectron,
-    checkForUpdates,
-    downloadUpdate,
-    installUpdate,
-  } = useUpdate();
 
   useEffect(() => {
     if (!isElectron || !window.electronAPI?.getAppVersion) return;

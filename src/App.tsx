@@ -18,12 +18,22 @@ import { CalendarView } from './components/CalendarView';
 import { GlobalSearch } from './components/GlobalSearch';
 import { SettingsPanel } from './components/SettingsPanel';
 import { UpdateBanner } from './components/UpdateUI';
-import { useUpdate } from './context/UpdateContext';
+import { useAppUpdater } from './hooks/useAppUpdater';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { applyPalette } from './constants/palettes';
 import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, SORTABLE_FOLDER_PREFIX, folderIdFromSortable, isFolderArchived } from './types';
 
 export default function App() {
+  const {
+    bannerState,
+    state: updateState,
+    isElectron,
+    checkForUpdates,
+    downloadUpdate,
+    installUpdate,
+    dismissBanner,
+  } = useAppUpdater();
+
   const hydrated = useStore((s) => s.hydrated);
   const theme = useStore((s) => s.theme);
   const colorPalette = useStore((s) => s.colorPalette);
@@ -36,12 +46,6 @@ export default function App() {
   const selectedNoteId = useStore((s) => s.selectedNoteId);
   const createNote = useStore((s) => s.createNote);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
-  const {
-    bannerState,
-    downloadUpdate,
-    installUpdate,
-    dismissBanner,
-  } = useUpdate();
 
   useKeyboardShortcuts();
 
@@ -69,6 +73,11 @@ export default function App() {
   useEffect(() => {
     applyPalette(colorPalette, theme);
     window.electronAPI?.setBrandIcons?.(colorPalette, theme);
+
+    const link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+    if (link) {
+      link.href = theme === 'dark' ? '/favicon-dark.png' : '/favicon.png';
+    }
   }, [theme, colorPalette]);
 
   useEffect(() => {
@@ -177,7 +186,13 @@ export default function App() {
         </div>
       </div>
       <GlobalSearch />
-      <SettingsPanel />
+      <SettingsPanel
+        updateState={updateState}
+        isElectron={isElectron}
+        checkForUpdates={checkForUpdates}
+        downloadUpdate={downloadUpdate}
+        installUpdate={installUpdate}
+      />
       <DragOverlay />
     </DndContext>
   );
