@@ -26,6 +26,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useStore } from '../store/useStore';
+import { assetUrl } from '../utils/assetUrl';
 import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, isFolderArchived, sortableFolderId } from '../types';
 import { ContextMenu } from './ContextMenu';
 import { QuickLinkDialog } from './QuickLinkDialog';
@@ -393,12 +394,12 @@ export function Sidebar() {
       />
       <div className="flex items-center px-4 py-4 border-b border-border">
         <img
-          src="/logo-horizontal.svg"
+          src={assetUrl('logo-horizontal.svg')}
           alt="Notes"
           className="h-7 w-auto dark:hidden"
         />
         <img
-          src="/logo-horizontal-dark.svg"
+          src={assetUrl('logo-horizontal-dark.svg')}
           alt="Notes"
           className="h-7 w-auto hidden dark:block"
         />

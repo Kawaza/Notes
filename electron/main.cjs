@@ -58,9 +58,21 @@ function requestQuitAfterFlush() {
 }
 
 function createTrayIcon() {
-  const iconPath = path.join(__dirname, 'icons', 'tray.png');
+  const iconPath = path.join(__dirname, 'icons', 'icon.png');
   const image = nativeImage.createFromPath(iconPath);
-  return image.isEmpty() ? nativeImage.createEmpty() : image;
+  if (!image.isEmpty()) {
+    return image.resize({ width: 16, height: 16 });
+  }
+
+  // Fallback: inline SVG matching the app logo
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 192 192" fill="none">
+    <rect width="192" height="192" rx="36" fill="#2B2B2B"/>
+    <circle cx="138" cy="54" r="16" fill="#FFFFFF"/>
+    <path d="M0 192 L0 132 L60 192 Z" fill="#FFFFFF"/>
+  </svg>`;
+  return nativeImage.createFromDataURL(
+    `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`,
+  );
 }
 
 function showMainWindow() {
