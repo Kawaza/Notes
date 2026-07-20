@@ -47,8 +47,8 @@ export function FolderColorBar({ folderId }: FolderColorBarProps) {
         >
           <Palette size={14} className="text-muted-foreground shrink-0" />
           <span
-            className="w-3 h-3 rounded-full shrink-0 border-2"
-            style={{ backgroundColor: color.border, borderColor: color.text }}
+            className="w-3 h-3 rounded-full shrink-0"
+            style={{ backgroundColor: color.border }}
           />
           <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">
             Folder Color · {color.name}
