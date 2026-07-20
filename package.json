@@ -1,7 +1,7 @@
 {
   "name": "notes",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "A clean, local note-taking app with folders, calendar, and code blocks",
   "author": "Kawaza",
   "repository": {
@@ -41,6 +41,7 @@
       }
     ],
     "win": {
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "target": [
         {

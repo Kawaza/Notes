@@ -391,11 +391,17 @@ export function Sidebar() {
         }}
         folderName={linkDialog?.folderName}
       />
-      <div className="flex items-center gap-2 px-4 py-4 border-b border-border">
-        <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
-          <FileText size={15} className="text-primary-foreground" />
-        </div>
-        <span className="font-semibold text-sm tracking-tight">Notes</span>
+      <div className="flex items-center px-4 py-4 border-b border-border">
+        <img
+          src="/logo-horizontal.svg"
+          alt="Notes"
+          className="h-7 w-auto dark:hidden"
+        />
+        <img
+          src="/logo-horizontal-dark.svg"
+          alt="Notes"
+          className="h-7 w-auto hidden dark:block"
+        />
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">

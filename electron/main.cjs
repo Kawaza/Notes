@@ -58,16 +58,9 @@ function requestQuitAfterFlush() {
 }
 
 function createTrayIcon() {
-  const size = 16;
-  const canvas = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 16 16">
-      <rect width="16" height="16" rx="3" fill="#6366f1"/>
-      <path d="M4 4h8v1.5H4V4zm0 3h8v1.5H4V7zm0 3h5v1.5H4V10z" fill="white"/>
-    </svg>
-  `;
-  return nativeImage.createFromDataURL(
-    `data:image/svg+xml;base64,${Buffer.from(canvas).toString('base64')}`
-  );
+  const iconPath = path.join(__dirname, 'icons', 'tray.png');
+  const image = nativeImage.createFromPath(iconPath);
+  return image.isEmpty() ? nativeImage.createEmpty() : image;
 }
 
 function showMainWindow() {
@@ -93,6 +86,7 @@ function createWindow() {
     minHeight: 600,
     show: false,
     title: 'Notes',
+    icon: path.join(__dirname, 'icons', 'icon.png'),
     backgroundColor: '#ffffff',
     autoHideMenuBar: true,
     webPreferences: {
