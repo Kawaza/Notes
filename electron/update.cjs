@@ -17,6 +17,7 @@ function setupAutoUpdater(win) {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.autoRunAppAfterInstall = true;
+  autoUpdater.disableDifferentialDownload = true;
 
   autoUpdater.on('checking-for-update', () => {
     sendStatus({ type: 'checking' });
@@ -37,7 +38,7 @@ function setupAutoUpdater(win) {
   });
 
   autoUpdater.on('error', (err) => {
-    sendStatus({ type: 'error', message: err.message });
+    sendStatus({ type: 'error', message: err?.message ?? 'Update failed' });
     manualCheckPending = false;
   });
 
@@ -54,29 +55,60 @@ function setupAutoUpdater(win) {
     sendStatus({ type: 'downloaded', version: info.version });
   });
 
-  setTimeout(() => checkForUpdates(false), 8000);
+  // Don't auto-check on launch — a new GitHub release shouldn't interrupt the app.
+  // Users check manually from Settings or the tray menu.
 }
 
-function checkForUpdates(manual = true) {
+async function checkForUpdates(manual = true) {
   const { app } = require('electron');
   if (!app.isPackaged) {
     sendStatus({ type: 'dev-mode' });
     return { skipped: true, reason: 'dev' };
   }
   manualCheckPending = manual;
-  return autoUpdater.checkForUpdates();
+  try {
+    return await autoUpdater.checkForUpdates();
+  } catch (err) {
+    sendStatus({ type: 'error', message: err?.message ?? 'Update check failed' });
+    manualCheckPending = false;
+    return { error: err };
+  }
 }
 
-function downloadUpdate() {
+async function downloadUpdate() {
   sendStatus({ type: 'downloading' });
-  return autoUpdater.downloadUpdate();
+  try {
+    return await autoUpdater.downloadUpdate();
+  } catch (err) {
+    sendStatus({ type: 'error', message: err?.message ?? 'Download failed' });
+    throw err;
+  }
 }
 
 function installUpdate() {
-  const { app } = require('electron');
+  const { app, BrowserWindow } = require('electron');
+  if (isInstallingUpdate) return;
+
   isInstallingUpdate = true;
   app.isQuitting = true;
-  autoUpdater.quitAndInstall(true, true);
+
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.removeAllListeners('close');
+      win.destroy();
+    }
+  }
+
+  // Let Windows release file locks before the NSIS installer runs.
+  setTimeout(() => {
+    try {
+      autoUpdater.quitAndInstall(true, true);
+    } catch (err) {
+      isInstallingUpdate = false;
+      app.isQuitting = false;
+      sendStatus({ type: 'error', message: err?.message ?? 'Install failed' });
+    }
+  }, 500);
 }
 
 function getIsInstallingUpdate() {
@@ -89,4 +121,5 @@ module.exports = {
   downloadUpdate,
   installUpdate,
   getIsInstallingUpdate,
+  sendStatus,
 };

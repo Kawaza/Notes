@@ -45,12 +45,13 @@ function saveDataToDisk(data) {
 let quitAfterFlush = false;
 
 function requestQuitAfterFlush() {
+  if (getIsInstallingUpdate()) return;
   quitAfterFlush = true;
   app.isQuitting = true;
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('flush-save');
     setTimeout(() => {
-      if (quitAfterFlush) {
+      if (quitAfterFlush && !getIsInstallingUpdate()) {
         quitAfterFlush = false;
         app.exit(0);
       }
@@ -217,11 +218,14 @@ ipcMain.on('flush-save-done', () => {
 ipcMain.handle('check-for-updates', () => checkForUpdates(true));
 ipcMain.handle('download-update', () => downloadUpdate());
 ipcMain.handle('install-update', () => {
+  if (getIsInstallingUpdate()) return { ok: false, reason: 'already-installing' };
+  quitAfterFlush = false;
   if (tray) {
     tray.destroy();
     tray = null;
   }
   installUpdate();
+  return { ok: true };
 });
 ipcMain.handle('set-brand-icons', (_event, { palette, theme }) => {
   if (typeof palette === 'string') brandPalette = palette;
