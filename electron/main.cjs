@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { setupAutoUpdater, checkForUpdates, downloadUpdate, installUpdate, waitForRendererFlush, resolvePendingFlush, getIsInstallingUpdate } = require('./update.cjs');
@@ -122,6 +122,22 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      void shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isDev && url.startsWith('http://localhost:')) return;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      event.preventDefault();
+      void shell.openExternal(url);
+    }
+  });
+
   mainWindow.on('close', (e) => {
     if (getIsInstallingUpdate()) return;
     if (!app.isQuitting) {
@@ -235,6 +251,12 @@ ipcMain.handle('set-brand-icons', (_event, { palette, theme }) => {
   applyBrandIcons();
 });
 ipcMain.handle('get-app-version', () => app.getVersion());
+ipcMain.handle('open-external', (_event, url) => {
+  if (typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
+    return shell.openExternal(url);
+  }
+  return false;
+});
 
 if (gotTheLock) {
   app.whenReady().then(() => {

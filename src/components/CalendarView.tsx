@@ -4,16 +4,16 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
-import type { EventClickArg, EventDropArg, DateSelectArg } from '@fullcalendar/core';
-import type { EventResizeDoneArg } from '@fullcalendar/interaction';
-import { Plus, Trash2, Archive } from 'lucide-react';
+import type { EventClickArg, EventDropArg } from '@fullcalendar/core';
+import type { EventResizeDoneArg, DropArg } from '@fullcalendar/interaction';
+import { ListPlus, Trash2, Archive } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { DEFAULT_FOLDER_ID, isFolderArchived } from '../types';
+import { isFolderArchived } from '../types';
 import { getEventStyle } from '../constants/calendarColors';
 import { Editor } from './Editor';
 import { ContextMenu } from './ContextMenu';
 import { ConfirmDialog } from './ConfirmDialog';
-import { FolderSelect } from './FolderSelect';
+import { AddTasksPanel } from './AddTasksPanel';
 import { MobileNavButton } from './MobileNavButton';
 
 export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
@@ -21,7 +21,6 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const folders = useStore((s) => s.folders);
   const theme = useStore((s) => s.theme);
   const updateNote = useStore((s) => s.updateNote);
-  const createNote = useStore((s) => s.createNote);
   const deleteNote = useStore((s) => s.deleteNote);
   const archiveNote = useStore((s) => s.archiveNote);
   const selectNote = useStore((s) => s.selectNote);
@@ -30,9 +29,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const calendarRef = useRef<FullCalendar>(null);
   const calendarContainerRef = useRef<HTMLDivElement>(null);
 
-  const [showQuickAdd, setShowQuickAdd] = useState(false);
-  const [quickTitle, setQuickTitle] = useState('');
-  const [quickFolderId, setQuickFolderId] = useState(DEFAULT_FOLDER_ID);
+  const [showAddTasks, setShowAddTasks] = useState(false);
   const [panelNoteId, setPanelNoteId] = useState<string | null>(null);
   const [timeTick, setTimeTick] = useState(0);
   const [eventMenu, setEventMenu] = useState<{ x: number; y: number; noteId: string; title: string } | null>(null);
@@ -88,37 +85,19 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
     });
   };
 
-  const openTaskPanel = (noteId: string) => {
-    setPanelNoteId(noteId);
-  };
-
-  const handleDateSelect = (info: DateSelectArg) => {
-    const noteId = createNote(DEFAULT_FOLDER_ID, 'New Task', { keepView: true });
+  const handleDrop = (info: DropArg) => {
+    const noteId = info.draggedEl.getAttribute('data-note-id');
+    if (!noteId || !info.date) return;
+    const note = notes.find((n) => n.id === noteId);
+    if (!note) return;
+    const start = info.date;
+    const end = new Date(start.getTime() + 3600000);
     updateNote(noteId, {
-      scheduledAt: info.start.toISOString(),
-      scheduledEnd: info.end?.toISOString(),
+      scheduledAt: start.toISOString(),
+      scheduledEnd: end.toISOString(),
       isTask: true,
-      calendarColor: getFolderColor(DEFAULT_FOLDER_ID),
+      calendarColor: getFolderColor(note.folderId),
     });
-    openTaskPanel(noteId);
-    calendarRef.current?.getApi().unselect();
-  };
-
-  const handleQuickAdd = () => {
-    if (!quickTitle.trim()) return;
-    const noteId = createNote(quickFolderId, quickTitle.trim(), { keepView: true });
-    const now = new Date();
-    now.setMinutes(0, 0, 0);
-    now.setHours(now.getHours() + 1);
-    updateNote(noteId, {
-      scheduledAt: now.toISOString(),
-      scheduledEnd: new Date(now.getTime() + 3600000).toISOString(),
-      isTask: true,
-      calendarColor: getFolderColor(quickFolderId),
-    });
-    openTaskPanel(noteId);
-    setQuickTitle('');
-    setShowQuickAdd(false);
   };
 
   const handleExpand = () => {
@@ -173,56 +152,24 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             <div className="min-w-0">
               <h2 className="text-lg font-medium">Calendar</h2>
               <p className="text-sm text-muted-foreground font-normal hidden sm:block">
-                Drag to reschedule · Click to edit · Right-click for options
+                Drag tasks onto calendar · Click to edit · Right-click for options
               </p>
             </div>
           </div>
           <button
-            onClick={() => {
-              setQuickFolderId(DEFAULT_FOLDER_ID);
-              setShowQuickAdd(true);
-            }}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-normal hover:opacity-90 transition-opacity cursor-pointer shrink-0"
+            onClick={() => setShowAddTasks((v) => !v)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-normal transition-opacity cursor-pointer shrink-0 ${
+              showAddTasks
+                ? 'bg-muted text-foreground'
+                : 'bg-primary text-primary-foreground hover:opacity-90'
+            }`}
           >
-            <Plus size={16} />
-            <span className="hidden sm:inline">New Task</span>
+            <ListPlus size={16} />
+            <span className="hidden sm:inline">Add Tasks</span>
           </button>
         </div>
 
-        {showQuickAdd && (
-          <div className="px-4 md:px-6 py-3 border-b border-border bg-muted/30 space-y-3 shrink-0">
-            <div className="flex flex-wrap items-center gap-2 md:gap-3">
-              <input
-                autoFocus
-                placeholder="Task title..."
-                value={quickTitle}
-                onChange={(e) => setQuickTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleQuickAdd();
-                  if (e.key === 'Escape') setShowQuickAdd(false);
-                }}
-                className="flex-1 px-3 py-2 text-sm rounded-md bg-background border border-border outline-none focus:ring-1 focus:ring-primary/40"
-              />
-              <FolderSelect
-                value={quickFolderId}
-                onChange={setQuickFolderId}
-                size="md"
-              />
-              <button
-                onClick={handleQuickAdd}
-                className="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:opacity-90 cursor-pointer"
-              >
-                Add
-              </button>
-              <button
-                onClick={() => setShowQuickAdd(false)}
-                className="px-4 py-2 text-sm rounded-md hover:bg-muted text-muted-foreground cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
+        <AddTasksPanel open={showAddTasks} onClose={() => setShowAddTasks(false)} />
 
         <div ref={calendarContainerRef} className="flex-1 p-2 md:p-4 calendar-container overflow-auto min-h-0">
           <FullCalendar
@@ -236,8 +183,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             }}
             events={events}
             editable
-            selectable
-            selectMirror
+            droppable
             dayMaxEvents
             nowIndicator={false}
             slotMinTime="06:00:00"
@@ -248,7 +194,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             eventClick={handleEventClick}
             eventDrop={handleEventDrop}
             eventResize={handleEventResize}
-            select={handleDateSelect}
+            drop={handleDrop}
             eventDurationEditable
             eventDidMount={(info) => {
               info.el.dataset.noteId = info.event.id;

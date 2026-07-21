@@ -9,7 +9,6 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useStore } from '../store/useStore';
-import { stripContent } from '../utils/markdown';
 import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, isFolderArchived } from '../types';
 import type { Note, FolderLink } from '../types';
 import { ContextMenu } from './ContextMenu';
@@ -19,6 +18,7 @@ import { QuickLinkDialog } from './QuickLinkDialog';
 import { OverflowMenu } from './OverflowMenu';
 import { MobileNavButton } from './MobileNavButton';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { openExternalUrl } from '../utils/openExternal';
 
 function getNewNoteFolderId(selectedFolderId: string | null): string {
   return selectedFolderId && selectedFolderId !== ALL_NOTES_ID
@@ -80,7 +80,6 @@ function NoteListItemContent({
   const archiveNote = useStore((s) => s.archiveNote);
   const folders = useStore((s) => s.folders);
 
-  const preview = stripContent(note.content, note.contentType).slice(0, 120);
   const timeAgo = formatDistanceToNow(new Date(note.updatedAt), { addSuffix: true });
   const folder = folders.find((f) => f.id === note.folderId);
   const displayTitle = note.title || 'Untitled';
@@ -182,9 +181,6 @@ function NoteListItemContent({
           {showFolder && folder && (
             <p className="text-[11px] text-muted-foreground/70 mt-0.5">{folder.name}</p>
           )}
-          {preview && (
-            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2 leading-relaxed">{preview}</p>
-          )}
           <p className="text-[11px] text-muted-foreground/60 mt-1">{timeAgo}</p>
         </div>
         {isMobile && !editing && (
@@ -281,13 +277,15 @@ function PinnedLinkRow({ link, onUnpin }: { link: FolderLink; onUnpin: () => voi
       <div className="flex items-center gap-1 group">
         <a
           href={link.url}
-          target="_blank"
-          rel="noopener noreferrer"
+          className="flex flex-1 items-center gap-2 text-xs text-foreground/80 hover:text-primary truncate py-1 min-w-0 cursor-pointer"
+          onClick={(e) => {
+            e.preventDefault();
+            openExternalUrl(link.url);
+          }}
           onContextMenu={(e) => {
             e.preventDefault();
             setContextMenu({ x: e.clientX, y: e.clientY });
           }}
-          className="flex flex-1 items-center gap-2 text-xs text-foreground/80 hover:text-primary truncate py-1 min-w-0"
         >
           <LinkIcon url={link.url} size={14} className="!w-7 !h-7 rounded-md" />
           <span className="truncate flex-1">{link.title}</span>

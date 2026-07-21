@@ -7,7 +7,6 @@ import {
   CalendarClock,
   Pencil,
   Trash2,
-  FileText,
   KeyRound,
   Copy,
   Check,
@@ -29,6 +28,7 @@ import { LinkIcon, getLinkServiceLabel } from './LinkIcon';
 import { getCalendarColor } from '../constants/calendarColors';
 import { OverflowMenu } from './OverflowMenu';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { openExternalUrl } from '../utils/openExternal';
 import type { FolderLink, FolderSecret, FolderSecretType, Note } from '../types';
 
 function formatTaskDate(dateStr: string) {
@@ -85,7 +85,7 @@ function LinkCard({
     {
       label: 'Open link',
       icon: <ExternalLink size={14} />,
-      onClick: () => window.open(link.url, '_blank', 'noopener,noreferrer'),
+      onClick: () => openExternalUrl(link.url),
     },
     {
       label: 'Delete link',
@@ -100,10 +100,12 @@ function LinkCard({
       <LinkIcon url={link.url} size={18} />
       <a
         href={link.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex-1 min-w-0 hover:underline"
-        onClick={(e) => e.stopPropagation()}
+        className="flex-1 min-w-0 hover:underline cursor-pointer"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openExternalUrl(link.url);
+        }}
       >
         <p className="text-sm font-medium truncate flex items-center gap-1.5">
           {link.pinned && <Star size={11} className="shrink-0 text-primary fill-primary" />}
@@ -143,9 +145,14 @@ function LinkCard({
           <button onClick={onDelete} className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer" title="Delete link">
             <Trash2 size={13} />
           </button>
-          <a href={link.url} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-md text-muted-foreground hover:bg-muted" title="Open link">
+          <button
+            type="button"
+            onClick={() => openExternalUrl(link.url)}
+            className="p-1.5 rounded-md text-muted-foreground hover:bg-muted cursor-pointer"
+            title="Open link"
+          >
             <ExternalLink size={13} />
-          </a>
+          </button>
         </div>
       )}
     </div>
@@ -330,11 +337,13 @@ function TaskRow({
       />
       <button onClick={onOpen} className="flex-1 min-w-0 text-left cursor-pointer">
         <p className="text-sm font-medium truncate">{task.title || 'Untitled task'}</p>
-        {task.scheduledAt && (
+        {task.scheduledAt ? (
           <p className={`text-[11px] ${overdue ? 'text-destructive' : 'text-muted-foreground'}`}>
             {overdue ? 'Overdue · ' : ''}
             {formatTaskDate(task.scheduledAt)}
           </p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">Unscheduled</p>
         )}
       </button>
       {showColors && (
@@ -402,8 +411,13 @@ export function FolderOverview({ folderId, onMobileBack }: FolderOverviewProps) 
   const tasks = useMemo(
     () =>
       notes
-        .filter((n) => n.folderId === folderId && n.isTask && n.scheduledAt)
-        .sort((a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime()),
+        .filter((n) => n.folderId === folderId && n.isTask)
+        .sort((a, b) => {
+          if (!a.scheduledAt && !b.scheduledAt) return a.order - b.order;
+          if (!a.scheduledAt) return -1;
+          if (!b.scheduledAt) return 1;
+          return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+        }),
     [notes, folderId],
   );
 
@@ -592,12 +606,6 @@ export function FolderOverview({ folderId, onMobileBack }: FolderOverviewProps) 
               </div>
             </section>
           )}
-
-          <p className="text-xs text-muted-foreground flex items-center gap-1.5 pb-4">
-            <FileText size={12} />
-            Select a note from the list, or press{' '}
-            <kbd className="px-1 py-0.5 rounded bg-muted">Ctrl+N</kbd> to create one.
-          </p>
         </div>
       </div>
 

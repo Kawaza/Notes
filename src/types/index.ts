@@ -112,6 +112,7 @@ declare global {
       getDataPath: () => Promise<string>;
       isElectron: boolean;
       getAppVersion: () => Promise<string>;
+      openExternal: (url: string) => Promise<boolean>;
       checkForUpdates: () => Promise<unknown>;
       downloadUpdate: () => Promise<unknown>;
       installUpdate: () => Promise<void>;

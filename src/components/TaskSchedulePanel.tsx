@@ -50,7 +50,6 @@ export function TaskSchedulePanel({
     updateNote(note.id, {
       scheduledAt: undefined,
       scheduledEnd: undefined,
-      isTask: false,
     });
     setEditing(false);
   };
@@ -78,9 +77,10 @@ export function TaskSchedulePanel({
   );
 
   const closeEditing = () => {
-    if (!note.scheduledAt) setEditing(false);
-    else setEditing(false);
+    setEditing(false);
   };
+
+  if (!note.scheduledAt) return null;
 
   return (
     <div className={`border-t border-border ${pad} py-2 bg-muted/30 shrink-0`}>
@@ -126,26 +126,15 @@ export function TaskSchedulePanel({
             />
             {folderSelect}
             <button
-              onClick={note.scheduledAt ? closeEditing : () => setEditing(false)}
+              onClick={closeEditing}
               className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
-              title={note.scheduledAt ? 'Done' : 'Cancel'}
+              title="Done"
             >
               <X size={15} />
             </button>
           </div>
         </>
-      ) : (
-        <div className="flex items-center gap-2">
-          <CalendarClock size={14} className="text-muted-foreground shrink-0" />
-          <button
-            onClick={() => setEditing(true)}
-            className="flex-1 text-left text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          >
-            Add to calendar
-          </button>
-          {folderSelect}
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }
