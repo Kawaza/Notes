@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import toIco from 'to-ico';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
@@ -60,6 +61,15 @@ for (const palette of Object.keys(PALETTE_PRIMARY)) {
 }
 
 await writeIcon(lightSource, path.join(buildDir, 'icon.png'), 512);
+const icoSizes = await Promise.all(
+  [256, 48, 32, 16].map(async (size) => {
+    return sharp(lightSource)
+      .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+  }),
+);
+fs.writeFileSync(path.join(buildDir, 'icon.ico'), await toIco(icoSizes));
 await writeIcon(lightSource, path.join(iconsDir, 'icon.png'), 256);
 await writeIcon(lightSource, path.join(publicDir, 'favicon.png'), 512);
 await writeIcon(darkSource, path.join(publicDir, 'favicon-dark.png'), 512);

@@ -6,6 +6,10 @@ const { getTrayIcon, getWindowIcon } = require('./icon-utils.cjs');
 
 app.setName('Notes');
 
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.notes.app');
+}
+
 const isDev = !app.isPackaged;
 let mainWindow;
 let tray;

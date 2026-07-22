@@ -1,7 +1,7 @@
 {
   "name": "notes",
   "private": true,
-  "version": "1.0.22",
+  "version": "1.0.23",
   "description": "A clean, local note-taking app with folders, calendar, and code blocks",
   "author": "Kawaza",
   "repository": {
@@ -29,6 +29,7 @@
     "directories": {
       "output": "release"
     },
+    "afterPack": "./scripts/after-pack.cjs",
     "files": [
       "dist/**/*",
       "electron/**/*"
@@ -42,7 +43,7 @@
       }
     ],
     "win": {
-      "icon": "build/icon.png",
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "target": [
         {
@@ -106,8 +107,10 @@
     "electron": "^34.5.8",
     "electron-builder": "^24.13.3",
     "oxlint": "^1.71.0",
+    "rcedit": "^5.0.2",
     "sharp": "^0.35.3",
     "tailwindcss": "^4.3.3",
+    "to-ico": "^1.1.5",
     "typescript": "~6.0.2",
     "vite": "^6.4.3",
     "wait-on": "^9.0.10"
