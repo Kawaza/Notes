@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle } from 'lucide-react';
 
 type ConfirmDialogProps = {
@@ -33,7 +34,7 @@ export function ConfirmDialog({
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
@@ -84,6 +85,7 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

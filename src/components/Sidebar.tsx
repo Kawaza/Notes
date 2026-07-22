@@ -467,7 +467,7 @@ export function Sidebar() {
     <aside
       className={`flex flex-col w-56 shrink-0 border-r border-border bg-sidebar h-full max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:shadow-xl max-md:transition-transform max-md:duration-200 max-md:ease-out ${
         mobileNavOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'
-      } md:relative md:translate-x-0`}
+      } md:relative`}
     >
       <QuickLinkDialog
         open={!!linkDialog}

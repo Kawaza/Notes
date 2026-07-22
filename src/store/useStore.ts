@@ -528,12 +528,53 @@ export const useStore = create<Store>((set, get) => ({
     const folder = state.folders.find((f) => f.id === folderId);
     if (!folder || !isFolderArchived(folder)) return;
 
-    const activeCount = state.folders.filter((f) => !isFolderArchived(f)).length;
-    const folders = state.folders.map((f) =>
-      f.id === folderId ? { ...f, archived: false, order: activeCount } : f,
+    const existingActive = state.folders.find(
+      (f) =>
+        !isFolderArchived(f) &&
+        f.id !== folderId &&
+        f.name.toLowerCase() === folder.name.toLowerCase(),
     );
 
-    set({ folders });
+    if (existingActive) {
+      const targetId = existingActive.id;
+      let noteOrder = state.notes.filter((n) => n.folderId === targetId).length;
+      const notes = state.notes.map((n) => {
+        if (n.folderId !== folderId) return n;
+        return {
+          ...n,
+          folderId: targetId,
+          order: noteOrder++,
+          updatedAt: new Date().toISOString(),
+        };
+      });
+
+      let linkOrder = state.folderLinks.filter((l) => l.folderId === targetId).length;
+      const folderLinks = state.folderLinks.map((l) => {
+        if (l.folderId !== folderId) return l;
+        return { ...l, folderId: targetId, order: linkOrder++ };
+      });
+
+      let secretOrder = state.folderSecrets.filter((s) => s.folderId === targetId).length;
+      const folderSecrets = state.folderSecrets.map((s) => {
+        if (s.folderId !== folderId) return s;
+        return { ...s, folderId: targetId, order: secretOrder++ };
+      });
+
+      set({
+        folders: state.folders.filter((f) => f.id !== folderId),
+        notes,
+        folderLinks,
+        folderSecrets,
+        selectedFolderId: targetId,
+        viewMode: 'notes',
+      });
+    } else {
+      const activeCount = state.folders.filter((f) => !isFolderArchived(f)).length;
+      const folders = state.folders.map((f) =>
+        f.id === folderId ? { ...f, archived: false, order: activeCount } : f,
+      );
+      set({ folders, selectedFolderId: folderId, viewMode: 'notes' });
+    }
     scheduleSave(get);
   },
 
