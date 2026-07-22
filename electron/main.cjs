@@ -142,7 +142,7 @@ function createWindow() {
     if (getIsInstallingUpdate()) return;
     if (!app.isQuitting) {
       e.preventDefault();
-      requestQuitAfterFlush();
+      mainWindow.hide();
     }
   });
 
@@ -246,6 +246,10 @@ ipcMain.handle('install-update', async () => {
     tray.destroy();
     tray = null;
   }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.removeAllListeners('close');
+    mainWindow.close();
+  }
   installUpdate();
   return { ok: true };
 });
@@ -270,7 +274,8 @@ if (gotTheLock) {
 
   app.on('window-all-closed', () => {
     if (getIsInstallingUpdate()) {
-      // quitAndInstall owns shutdown — do not call app.quit() here.
+      // Tray apps stay alive with no windows — force exit so NSIS can replace files.
+      setImmediate(() => app.exit(0));
       return;
     }
     // Keep running in tray on Windows

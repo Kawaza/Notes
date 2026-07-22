@@ -241,11 +241,16 @@ function installUpdate() {
   isInstallingUpdate = true;
   app.isQuitting = true;
 
-  // Let quitAndInstall close windows normally. Do not destroy windows or call
-  // app.quit() here — that races with the NSIS installer and aborts the update.
   setImmediate(() => {
     try {
-      autoUpdater.quitAndInstall(false, true);
+      // Silent install + --force-run relaunches the app after NSIS finishes.
+      autoUpdater.quitAndInstall(true, true);
+      // Fallback: tray apps may ignore app.quit(); ensure the process exits.
+      setTimeout(() => {
+        if (getIsInstallingUpdate()) {
+          app.exit(0);
+        }
+      }, 2000);
     } catch (err) {
       isInstallingUpdate = false;
       app.isQuitting = false;
