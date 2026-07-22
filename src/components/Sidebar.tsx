@@ -350,21 +350,42 @@ function PinnedNoteItem({ id, title }: { id: string; title: string }) {
 }
 
 const ARCHIVE_OPEN_KEY = 'sidebar-archive-open';
+const FOLDERS_OPEN_KEY = 'sidebar-folders-open';
 
-function readArchiveOpenPreference(): boolean {
+function readSectionOpen(key: string, defaultOpen = true): boolean {
   try {
-    return localStorage.getItem(ARCHIVE_OPEN_KEY) !== 'false';
+    return localStorage.getItem(key) !== 'false';
   } catch {
-    return true;
+    return defaultOpen;
   }
 }
 
-function writeArchiveOpenPreference(open: boolean) {
+function writeSectionOpen(key: string, open: boolean) {
   try {
-    localStorage.setItem(ARCHIVE_OPEN_KEY, String(open));
+    localStorage.setItem(key, String(open));
   } catch {
     // ignore
   }
+}
+
+/** Expand a sidebar section when the user navigates into it (not when they collapse it). */
+function useExpandSectionOnSelect(
+  selectedId: string | null,
+  sectionIds: string[],
+  setOpen: (open: boolean) => void,
+  storageKey: string,
+) {
+  const prevSelectedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const navigated = prevSelectedRef.current !== selectedId;
+    prevSelectedRef.current = selectedId;
+
+    if (navigated && selectedId && sectionIds.includes(selectedId)) {
+      setOpen(true);
+      writeSectionOpen(storageKey, true);
+    }
+  }, [selectedId, sectionIds, setOpen, storageKey]);
 }
 
 function getNewNoteFolderId(selectedFolderId: string | null): string {
@@ -377,7 +398,8 @@ export function Sidebar() {
   const [newFolderName, setNewFolderName] = useState('');
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [linkDialog, setLinkDialog] = useState<{ folderId: string; folderName: string } | null>(null);
-  const [archiveOpen, setArchiveOpen] = useState(readArchiveOpenPreference);
+  const [foldersOpen, setFoldersOpen] = useState(() => readSectionOpen(FOLDERS_OPEN_KEY));
+  const [archiveOpen, setArchiveOpen] = useState(() => readSectionOpen(ARCHIVE_OPEN_KEY));
 
   const folders = useStore((s) => s.folders);
   const theme = useStore((s) => s.theme);
@@ -427,16 +449,18 @@ export function Sidebar() {
     [folders],
   );
 
-  useEffect(() => {
-    if (
-      selectedFolderId &&
-      archivedFolders.some((f) => f.id === selectedFolderId) &&
-      !archiveOpen
-    ) {
-      setArchiveOpen(true);
-      writeArchiveOpenPreference(true);
-    }
-  }, [selectedFolderId, archivedFolders, archiveOpen]);
+  const archivedFolderIds = useMemo(
+    () => archivedFolders.map((f) => f.id),
+    [archivedFolders],
+  );
+
+  const activeFolderIds = useMemo(
+    () => activeFolders.map((f) => f.id),
+    [activeFolders],
+  );
+
+  useExpandSectionOnSelect(selectedFolderId, archivedFolderIds, setArchiveOpen, ARCHIVE_OPEN_KEY);
+  useExpandSectionOnSelect(selectedFolderId, activeFolderIds, setFoldersOpen, FOLDERS_OPEN_KEY);
 
   const sortableFolderIds = useMemo(
     () => activeFolders.map((f) => sortableFolderId(f.id)),
@@ -455,12 +479,26 @@ export function Sidebar() {
     createNote(getNewNoteFolderId(selectedFolderId));
   };
 
+  const toggleFoldersOpen = () => {
+    setFoldersOpen((open) => {
+      const next = !open;
+      writeSectionOpen(FOLDERS_OPEN_KEY, next);
+      return next;
+    });
+  };
+
   const toggleArchiveOpen = () => {
     setArchiveOpen((open) => {
       const next = !open;
-      writeArchiveOpenPreference(next);
+      writeSectionOpen(ARCHIVE_OPEN_KEY, next);
       return next;
     });
+  };
+
+  const handleShowNewFolder = () => {
+    setFoldersOpen(true);
+    writeSectionOpen(FOLDERS_OPEN_KEY, true);
+    setShowNewFolder(true);
   };
 
   return (
@@ -532,21 +570,36 @@ export function Sidebar() {
           </>
         )}
 
-        <div className="mt-5 pt-1 pb-1.5 px-2">
-          <div className="flex items-center justify-between">
+        <div className="mt-5 pt-1 pb-1.5 px-2 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={toggleFoldersOpen}
+            className="flex flex-1 min-w-0 items-center gap-1.5 text-left rounded-md hover:bg-muted/60 transition-colors cursor-pointer py-0.5"
+            aria-expanded={foldersOpen}
+          >
+            {foldersOpen ? (
+              <ChevronDown size={14} className="shrink-0 text-muted-foreground opacity-60" />
+            ) : (
+              <ChevronRight size={14} className="shrink-0 text-muted-foreground opacity-60" />
+            )}
             <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               Folders
             </span>
-            <button
-              onClick={() => setShowNewFolder(true)}
-              className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            >
-              <Plus size={14} />
-            </button>
-          </div>
+            <span className="text-[11px] text-muted-foreground/60 tabular-nums">
+              {activeFolders.length}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={handleShowNewFolder}
+            className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
+            aria-label="New folder"
+          >
+            <Plus size={14} />
+          </button>
         </div>
 
-        {showNewFolder && (
+        {foldersOpen && showNewFolder && (
           <div className="px-1 mb-1">
             <input
               autoFocus
@@ -566,17 +619,19 @@ export function Sidebar() {
           </div>
         )}
 
-        <SortableContext items={sortableFolderIds} strategy={verticalListSortingStrategy}>
-          {activeFolders.map((folder) => (
-            <FolderItem
-              key={folder.id}
-              id={folder.id}
-              name={folder.name}
-              isSelected={viewMode === 'notes' && selectedFolderId === folder.id}
-              onAddQuickLink={(folderId, folderName) => setLinkDialog({ folderId, folderName })}
-            />
-          ))}
-        </SortableContext>
+        {foldersOpen && (
+          <SortableContext items={sortableFolderIds} strategy={verticalListSortingStrategy}>
+            {activeFolders.map((folder) => (
+              <FolderItem
+                key={folder.id}
+                id={folder.id}
+                name={folder.name}
+                isSelected={viewMode === 'notes' && selectedFolderId === folder.id}
+                onAddQuickLink={(folderId, folderName) => setLinkDialog({ folderId, folderName })}
+              />
+            ))}
+          </SortableContext>
+        )}
 
         {archivedFolders.length > 0 && (
           <>
