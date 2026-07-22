@@ -19,6 +19,8 @@ export function useAppUpdater() {
   useEffect(() => {
     if (!isElectron || !window.electronAPI?.onUpdateEvent) return;
 
+    void window.electronAPI.notifyUpdaterReady?.();
+
     return window.electronAPI.onUpdateEvent((event) => {
       switch (event.type) {
         case 'checking':

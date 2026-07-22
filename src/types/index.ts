@@ -114,6 +114,7 @@ declare global {
       getAppVersion: () => Promise<string>;
       openExternal: (url: string) => Promise<boolean>;
       checkForUpdates: () => Promise<unknown>;
+      notifyUpdaterReady: () => Promise<{ ok: boolean }>;
       downloadUpdate: () => Promise<unknown>;
       installUpdate: () => Promise<void>;
       setBrandIcons: (palette: string, theme: Theme) => Promise<void>;

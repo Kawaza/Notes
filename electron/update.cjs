@@ -4,8 +4,42 @@ let mainWindow = null;
 let manualCheckPending = false;
 let isInstallingUpdate = false;
 let pendingFlushResolve = null;
+let cachedStatus = null;
+let lastBackgroundCheckAt = 0;
+let retryTimer = null;
+let manualRetryAttempts = 0;
+
+const MAX_MANUAL_RETRIES = 2;
+const TRANSIENT_RETRY_MS = 30_000;
+
+function isTransientNetworkError(message) {
+  const msg = String(message ?? '').toLowerCase();
+  return (
+    msg.includes('err_network_io_suspended') ||
+    msg.includes('err_internet_disconnected') ||
+    msg.includes('err_network_changed') ||
+    msg.includes('err_name_not_resolved') ||
+    msg.includes('enetunreach') ||
+    msg.includes('etimedout') ||
+    msg.includes('econnreset') ||
+    msg.includes('econnrefused') ||
+    msg.includes('network request failed') ||
+    msg.includes('getaddrinfo')
+  );
+}
 
 function sendStatus(payload) {
+  if (
+    payload.type === 'available' ||
+    payload.type === 'downloaded' ||
+    payload.type === 'downloading' ||
+    payload.type === 'progress'
+  ) {
+    cachedStatus = payload;
+  } else if (payload.type === 'not-available' && manualCheckPending) {
+    cachedStatus = null;
+  }
+
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('update-event', payload);
   }
@@ -28,6 +62,7 @@ function setupAutoUpdater(win) {
 
   autoUpdater.on('update-available', (info) => {
     manualCheckPending = false;
+    manualRetryAttempts = 0;
     sendStatus({
       type: 'available',
       version: info.version,
@@ -36,6 +71,7 @@ function setupAutoUpdater(win) {
   });
 
   autoUpdater.on('update-not-available', () => {
+    manualRetryAttempts = 0;
     if (manualCheckPending) {
       sendStatus({ type: 'not-available' });
     }
@@ -43,10 +79,7 @@ function setupAutoUpdater(win) {
   });
 
   autoUpdater.on('error', (err) => {
-    if (manualCheckPending) {
-      sendStatus({ type: 'error', message: err?.message ?? 'Update failed' });
-    }
-    manualCheckPending = false;
+    handleUpdateError(err, manualCheckPending);
   });
 
   autoUpdater.on('download-progress', (progress) => {
@@ -62,18 +95,85 @@ function setupAutoUpdater(win) {
     sendStatus({ type: 'downloaded', version: info.version });
   });
 
-  // Standard practice: check silently in the background, notify when an update exists.
-  // User still chooses when to download and restart — no auto-install.
-  const INITIAL_CHECK_DELAY_MS = 60_000;
+  const INITIAL_CHECK_DELAY_MS = 15_000;
   const PERIODIC_CHECK_MS = 4 * 60 * 60 * 1000;
 
   setTimeout(() => {
-    void checkForUpdates(false);
+    void runBackgroundCheck('initial-delay');
   }, INITIAL_CHECK_DELAY_MS);
 
   setInterval(() => {
-    void checkForUpdates(false);
+    void runBackgroundCheck('periodic');
   }, PERIODIC_CHECK_MS);
+
+  const { powerMonitor } = require('electron');
+  powerMonitor.on('resume', () => {
+    setTimeout(() => {
+      void runBackgroundCheck('system-resume');
+    }, 5000);
+  });
+}
+
+function scheduleRetryCheck(reason, delayMs, manual = false) {
+  if (retryTimer) clearTimeout(retryTimer);
+  console.log(`[updater] retry scheduled (${reason}) in ${delayMs}ms`);
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    lastBackgroundCheckAt = 0;
+    void checkForUpdates(manual);
+  }, delayMs);
+}
+
+function handleUpdateError(err, manual) {
+  const message = err?.message ?? String(err);
+  console.error('[updater]', message);
+
+  if (isTransientNetworkError(message)) {
+    if (manual && manualRetryAttempts < MAX_MANUAL_RETRIES) {
+      manualRetryAttempts += 1;
+      scheduleRetryCheck('manual-network-retry', 3000, true);
+      return;
+    }
+
+    manualCheckPending = false;
+    manualRetryAttempts = 0;
+
+    if (manual) {
+      sendStatus({
+        type: 'error',
+        message: 'Could not reach the update server. Check your internet connection and try again.',
+      });
+      return;
+    }
+
+    scheduleRetryCheck('background-network-retry', TRANSIENT_RETRY_MS, false);
+    return;
+  }
+
+  manualRetryAttempts = 0;
+  if (manual) {
+    sendStatus({ type: 'error', message: message || 'Update failed' });
+  }
+  manualCheckPending = false;
+}
+
+async function runBackgroundCheck(reason) {
+  const { app } = require('electron');
+  if (!app.isPackaged) return;
+
+  const now = Date.now();
+  if (now - lastBackgroundCheckAt < 30_000) return;
+  lastBackgroundCheckAt = now;
+
+  console.log('[updater] background check:', reason);
+  await checkForUpdates(false);
+}
+
+function onRendererReady() {
+  if (cachedStatus) {
+    sendStatus(cachedStatus);
+  }
+  void runBackgroundCheck('renderer-ready');
 }
 
 async function checkForUpdates(manual = true) {
@@ -86,8 +186,7 @@ async function checkForUpdates(manual = true) {
   try {
     return await autoUpdater.checkForUpdates();
   } catch (err) {
-    sendStatus({ type: 'error', message: err?.message ?? 'Update check failed' });
-    manualCheckPending = false;
+    handleUpdateError(err, manual);
     return { error: err };
   }
 }
@@ -97,7 +196,15 @@ async function downloadUpdate() {
   try {
     return await autoUpdater.downloadUpdate();
   } catch (err) {
-    sendStatus({ type: 'error', message: err?.message ?? 'Download failed' });
+    const message = err?.message ?? 'Download failed';
+    if (isTransientNetworkError(message)) {
+      sendStatus({
+        type: 'error',
+        message: 'Download interrupted. Check your internet connection and try again.',
+      });
+    } else {
+      sendStatus({ type: 'error', message });
+    }
     throw err;
   }
 }
@@ -128,29 +235,23 @@ function resolvePendingFlush() {
 }
 
 function installUpdate() {
-  const { app, BrowserWindow } = require('electron');
+  const { app } = require('electron');
   if (isInstallingUpdate) return;
 
   isInstallingUpdate = true;
   app.isQuitting = true;
 
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.removeAllListeners('close');
-      win.destroy();
-    }
-  }
-
-  // Let Windows release file locks before the NSIS installer runs.
-  setTimeout(() => {
+  // Let quitAndInstall close windows normally. Do not destroy windows or call
+  // app.quit() here — that races with the NSIS installer and aborts the update.
+  setImmediate(() => {
     try {
-      autoUpdater.quitAndInstall(true, true);
+      autoUpdater.quitAndInstall(false, true);
     } catch (err) {
       isInstallingUpdate = false;
       app.isQuitting = false;
       sendStatus({ type: 'error', message: err?.message ?? 'Install failed' });
     }
-  }, 1000);
+  });
 }
 
 function getIsInstallingUpdate() {
@@ -159,6 +260,7 @@ function getIsInstallingUpdate() {
 
 module.exports = {
   setupAutoUpdater,
+  onRendererReady,
   checkForUpdates,
   downloadUpdate,
   installUpdate,

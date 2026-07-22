@@ -190,6 +190,7 @@ export default function App() {
           onDownload={downloadUpdate}
           onInstall={installUpdate}
           onDismiss={dismissBanner}
+          onRetry={checkForUpdates}
           onOpenSettings={() => {
             dismissBanner();
             setSettingsOpen(true);

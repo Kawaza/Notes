@@ -7,6 +7,7 @@ type UpdateBannerProps = {
   onInstall: () => void;
   onDismiss: () => void;
   onOpenSettings: () => void;
+  onRetry?: () => void;
 };
 
 export function UpdateBanner({
@@ -15,6 +16,7 @@ export function UpdateBanner({
   onInstall,
   onDismiss,
   onOpenSettings,
+  onRetry,
 }: UpdateBannerProps) {
   if (state.status === 'idle' || state.status === 'checking' || state.status === 'current' || state.status === 'dev-mode') {
     return null;
@@ -23,7 +25,15 @@ export function UpdateBanner({
   if (state.status === 'error') {
     return (
       <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 bg-destructive/10 border-b border-destructive/20 text-sm">
-        <span className="flex-1 text-destructive">Update check failed: {state.message}</span>
+        <span className="flex-1 text-destructive">{state.message}</span>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-destructive/30 text-destructive text-xs font-medium hover:bg-destructive/10 cursor-pointer"
+          >
+            <RefreshCw size={13} /> Retry
+          </button>
+        )}
         <button onClick={onDismiss} className="p-1 rounded hover:bg-destructive/10 cursor-pointer">
           <X size={14} />
         </button>

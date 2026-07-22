@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { setupAutoUpdater, checkForUpdates, downloadUpdate, installUpdate, waitForRendererFlush, resolvePendingFlush, getIsInstallingUpdate } = require('./update.cjs');
+const { setupAutoUpdater, onRendererReady, checkForUpdates, downloadUpdate, installUpdate, waitForRendererFlush, resolvePendingFlush, getIsInstallingUpdate } = require('./update.cjs');
 const { getTrayIcon, getWindowIcon } = require('./icon-utils.cjs');
 
 app.setName('Notes');
@@ -233,6 +233,10 @@ ipcMain.on('flush-save-done', () => {
 });
 
 ipcMain.handle('check-for-updates', () => checkForUpdates(true));
+ipcMain.handle('updater-ready', () => {
+  onRendererReady();
+  return { ok: true };
+});
 ipcMain.handle('download-update', () => downloadUpdate());
 ipcMain.handle('install-update', async () => {
   if (getIsInstallingUpdate()) return { ok: false, reason: 'already-installing' };
@@ -266,7 +270,7 @@ if (gotTheLock) {
 
   app.on('window-all-closed', () => {
     if (getIsInstallingUpdate()) {
-      app.quit();
+      // quitAndInstall owns shutdown — do not call app.quit() here.
       return;
     }
     // Keep running in tray on Windows

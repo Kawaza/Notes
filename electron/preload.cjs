@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  notifyUpdaterReady: () => ipcRenderer.invoke('updater-ready'),
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
   installUpdate: () => ipcRenderer.invoke('install-update'),
   setBrandIcons: (palette, theme) => ipcRenderer.invoke('set-brand-icons', { palette, theme }),
