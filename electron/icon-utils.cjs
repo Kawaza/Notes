@@ -40,7 +40,11 @@ function getBrandIcon(palette, theme, size) {
 }
 
 function getTrayIcon(palette, theme) {
-  return getBrandIcon(palette, theme, 16) ?? nativeImage.createEmpty();
+  const icon =
+    getBrandIcon(palette, theme, 16) ??
+    getBrandIcon(palette, theme, 32) ??
+    getBrandIcon('default', theme === 'dark' ? 'dark' : 'light', 16);
+  return icon ?? nativeImage.createEmpty();
 }
 
 function getWindowIcon(palette, theme) {
