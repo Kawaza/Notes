@@ -70,9 +70,10 @@ async function renderTaskbarIcon(size) {
     .toBuffer();
 }
 
-// Windows taskbar / .exe icon: white branded mark on black tile
+// Windows taskbar / .exe icon + window hover preview: white branded mark
 const taskbarPrimary = PALETTE_PRIMARY.default.light;
 await renderTaskbarIcon(512).then((png) => fs.writeFileSync(path.join(buildDir, 'icon.png'), png));
+await renderTaskbarIcon(256).then((png) => fs.writeFileSync(path.join(iconsDir, 'window-icon.png'), png));
 await writeBrandIcon(taskbarPrimary, path.join(iconsDir, 'icon.png'), 256);
 
 const icoSizes = await Promise.all([256, 48, 32, 16].map((size) => renderTaskbarIcon(size)));
