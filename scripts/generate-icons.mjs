@@ -34,6 +34,7 @@ function buildBrandMarkSvg(primary) {
 const publicDir = path.join(root, 'public');
 const iconsDir = path.join(root, 'electron', 'icons');
 const buildDir = path.join(root, 'build');
+const taskbarIconSource = path.join(root, 'src', 'assets', 'brand', 'logo-icon (1).png');
 
 fs.mkdirSync(publicDir, { recursive: true });
 fs.mkdirSync(iconsDir, { recursive: true });
@@ -62,15 +63,22 @@ for (const palette of Object.keys(PALETTE_PRIMARY)) {
   }
 }
 
-// Windows taskbar / .exe icon: branded tile with white mark (default palette)
+async function renderTaskbarIcon(size) {
+  return sharp(taskbarIconSource)
+    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 1 } })
+    .png()
+    .toBuffer();
+}
+
+// Windows taskbar / .exe icon: white branded mark on black tile
 const taskbarPrimary = PALETTE_PRIMARY.default.light;
-await writeBrandIcon(taskbarPrimary, path.join(buildDir, 'icon.png'), 512);
+await renderTaskbarIcon(512).then((png) => fs.writeFileSync(path.join(buildDir, 'icon.png'), png));
 await writeBrandIcon(taskbarPrimary, path.join(iconsDir, 'icon.png'), 256);
 
-const icoSizes = await Promise.all([256, 48, 32, 16].map((size) => renderBrandIcon(taskbarPrimary, size)));
+const icoSizes = await Promise.all([256, 48, 32, 16].map((size) => renderTaskbarIcon(size)));
 fs.writeFileSync(path.join(buildDir, 'icon.ico'), await toIco(icoSizes));
 
 await writeBrandIcon(taskbarPrimary, path.join(publicDir, 'favicon.png'), 512);
 await writeBrandIcon(PALETTE_PRIMARY.default.dark, path.join(publicDir, 'favicon-dark.png'), 512);
 
-console.log('Generated branded app icons (colored tile + white mark)');
+console.log('Generated app icons (white taskbar mark + colored tray tiles)');
