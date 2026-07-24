@@ -63,9 +63,48 @@ for (const palette of Object.keys(PALETTE_PRIMARY)) {
   }
 }
 
-async function renderTaskbarIcon(size) {
-  return sharp(taskbarIconSource)
-    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 1 } })
+async function getOpaqueBounds(source) {
+  const { data, info } = await sharp(source).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width: w, height: h } = info;
+  let minX = w;
+  let maxX = 0;
+  let minY = h;
+  let maxY = 0;
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (data[(y * w + x) * 4 + 3] > 128) {
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      }
+    }
+  }
+
+  return { left: minX, top: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+
+/** Crop to logo bounds, scale down, and center on a square black tile. */
+async function renderTaskbarIcon(size, scale = 0.72) {
+  const bounds = await getOpaqueBounds(taskbarIconSource);
+  const cropped = await sharp(taskbarIconSource).extract(bounds).toBuffer();
+  const logoSize = Math.round(size * scale);
+  const resized = await sharp(cropped)
+    .resize(logoSize, logoSize, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer();
+
+  const pad = Math.floor((size - logoSize) / 2);
+  return sharp({
+    create: {
+      width: size,
+      height: size,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 1 },
+    },
+  })
+    .composite([{ input: resized, left: pad, top: pad }])
     .png()
     .toBuffer();
 }
