@@ -23,6 +23,7 @@ const PALETTE_PRIMARY = {
 };
 
 const logoSvgPath = path.join(root, 'src', 'assets', 'brand', 'logo-icon.svg');
+const desktopIconSource = path.join(root, 'src', 'assets', 'brand', 'desktop icon.png');
 const logoSvg = fs.readFileSync(logoSvgPath);
 const publicDir = path.join(root, 'public');
 const iconsDir = path.join(root, 'electron', 'icons');
@@ -75,4 +76,17 @@ await writeIcon(lightSource, path.join(publicDir, 'favicon.png'), 512);
 await writeIcon(darkSource, path.join(publicDir, 'favicon-dark.png'), 512);
 await writeIcon(lightSource, path.join(publicDir, 'logo-icon.png'), 512);
 
-console.log('Generated app icons from brand SVG');
+if (fs.existsSync(desktopIconSource)) {
+  const desktopIcoSizes = await Promise.all(
+    [256, 48, 32, 16].map(async (size) =>
+      sharp(desktopIconSource)
+        .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 1 } })
+        .png()
+        .toBuffer(),
+    ),
+  );
+  fs.writeFileSync(path.join(buildDir, 'desktop-icon.ico'), await toIco(desktopIcoSizes));
+  console.log('Generated app icons from brand SVG + desktop shortcut icon');
+} else {
+  console.log('Generated app icons from brand SVG');
+}

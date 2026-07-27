@@ -1,7 +1,7 @@
 {
   "name": "notes",
   "private": true,
-  "version": "1.0.29",
+  "version": "1.0.30",
   "description": "A clean, local note-taking app with folders, calendar, and code blocks",
   "author": "Kawaza",
   "repository": {
@@ -30,6 +30,12 @@
       "output": "release"
     },
     "afterPack": "./scripts/after-pack.cjs",
+    "extraFiles": [
+      {
+        "from": "build/desktop-icon.ico",
+        "to": "desktop-icon.ico"
+      }
+    ],
     "files": [
       "dist/**/*",
       "electron/**/*"
@@ -57,7 +63,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
       "runAfterFinish": true,
       "shortcutName": "Notes",
