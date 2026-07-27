@@ -23,7 +23,7 @@ const PALETTE_PRIMARY = {
 };
 
 const logoSvgPath = path.join(root, 'src', 'assets', 'brand', 'logo-icon.svg');
-const desktopIconSource = path.join(root, 'src', 'assets', 'brand', 'desktop-icon-2.png');
+const desktopIconSource = path.join(root, 'src', 'assets', 'brand', 'desktop icon.png');
 const logoSvg = fs.readFileSync(logoSvgPath);
 const publicDir = path.join(root, 'public');
 const iconsDir = path.join(root, 'electron', 'icons');
@@ -76,15 +76,16 @@ await writeIcon(lightSource, path.join(publicDir, 'favicon.png'), 512);
 await writeIcon(darkSource, path.join(publicDir, 'favicon-dark.png'), 512);
 await writeIcon(lightSource, path.join(publicDir, 'logo-icon.png'), 512);
 
+/** Keep source padding; use transparent background so uneven margins don't become black lines. */
+async function renderDesktopIcon(size) {
+  return sharp(desktopIconSource)
+    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer();
+}
+
 if (fs.existsSync(desktopIconSource)) {
-  const desktopIcoSizes = await Promise.all(
-    [256, 48, 32, 16].map(async (size) =>
-      sharp(desktopIconSource)
-        .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 1 } })
-        .png()
-        .toBuffer(),
-    ),
-  );
+  const desktopIcoSizes = await Promise.all([256, 48, 32, 16].map((size) => renderDesktopIcon(size)));
   fs.writeFileSync(path.join(buildDir, 'desktop-icon.ico'), await toIco(desktopIcoSizes));
   console.log('Generated app icons from brand SVG + desktop shortcut icon');
 } else {
