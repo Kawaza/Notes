@@ -23,7 +23,7 @@ const PALETTE_PRIMARY = {
 };
 
 const logoSvgPath = path.join(root, 'src', 'assets', 'brand', 'logo-icon.svg');
-const desktopIconSource = path.join(root, 'src', 'assets', 'brand', 'desktop icon.png');
+const desktopIconSource = path.join(root, 'src', 'assets', 'brand', 'desktop-icon-2.png');
 const logoSvg = fs.readFileSync(logoSvgPath);
 const publicDir = path.join(root, 'public');
 const iconsDir = path.join(root, 'electron', 'icons');
