@@ -40,18 +40,11 @@ function getBrandIcon(palette, theme, size) {
 }
 
 function getTrayIcon(palette, theme) {
-  const icon =
-    getBrandIcon(palette, theme, 16) ??
-    getBrandIcon(palette, theme, 32) ??
-    getBrandIcon('default', theme === 'dark' ? 'dark' : 'light', 16);
-  return icon ?? nativeImage.createEmpty();
+  return getBrandIcon(palette, theme, 16) ?? nativeImage.createEmpty();
 }
 
-function getWindowIcon(_palette, _theme) {
-  const windowIcon = loadIconFromFile('window-icon.png');
-  if (windowIcon) return windowIcon;
-
-  return getBrandIcon('default', 'light', 256) ?? loadIconFromSvg('#6366f1', 256);
+function getWindowIcon(palette, theme) {
+  return getBrandIcon(palette, theme, 256) ?? getBrandIcon('default', 'light', 256);
 }
 
 module.exports = { getTrayIcon, getWindowIcon, logoSvg };
