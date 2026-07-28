@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import type { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -20,7 +21,10 @@ import {
   ImageIcon,
   Link2,
   Unlink,
+  Pilcrow,
 } from 'lucide-react';
+import type { NoteAttachment } from '../types';
+import { LinkDialog } from './LinkDialog';
 
 const lowlight = createLowlight(common);
 
@@ -37,6 +41,7 @@ function ToolbarButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       title={title}
       className={`p-1.5 rounded-md transition-colors cursor-pointer ${
@@ -61,8 +66,9 @@ interface RichTextEditorProps {
   noteId: string;
   content: string;
   onUpdate: (html: string) => void;
-  onFileDrop: (file: File) => void;
+  onAddAttachment: (file: File) => Promise<NoteAttachment | null>;
   onFileClick: () => void;
+  onEditorReady?: (editor: Editor) => void;
   compact?: boolean;
 }
 
@@ -70,19 +76,67 @@ export function RichTextEditor({
   noteId,
   content,
   onUpdate,
-  onFileDrop,
+  onAddAttachment,
   onFileClick,
+  onEditorReady,
   compact,
 }: RichTextEditorProps) {
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [linkDialogUrl, setLinkDialogUrl] = useState('');
+  const onAddAttachmentRef = useRef(onAddAttachment);
+  onAddAttachmentRef.current = onAddAttachment;
+
+  const editorRef = useRef<Editor | null>(null);
+
+  const insertImageFile = useCallback(
+    async (
+      file: File,
+      view?: {
+        posAtCoords: (coords: { left: number; top: number }) => { pos: number } | null;
+        state: { selection: { from: number } };
+      },
+      coords?: { left: number; top: number },
+    ) => {
+      if (!file.type.startsWith('image/')) return false;
+      const attachment = await onAddAttachmentRef.current(file);
+      if (!attachment) return false;
+
+      const ed = editorRef.current;
+      if (!ed) return false;
+
+      const pos =
+        view && coords
+          ? view.posAtCoords({ left: coords.left, top: coords.top })?.pos ?? view.state.selection.from
+          : ed.state.selection.from;
+
+      ed.chain()
+        .focus()
+        .insertContentAt(pos, {
+          type: 'image',
+          attrs: { src: attachment.dataUrl, alt: file.name },
+        })
+        .run();
+      return true;
+    },
+    [],
+  );
+
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit.configure({ codeBlock: false }),
+      StarterKit.configure({
+        codeBlock: false,
+        heading: { levels: [1, 2] },
+      }),
       CodeBlockLowlight.configure({ lowlight }),
       Placeholder.configure({ placeholder: 'Start writing or paste a link...' }),
       TaskList,
       TaskItem.configure({ nested: true }),
-      Image.configure({ inline: false, allowBase64: true }),
+      Image.configure({
+        inline: false,
+        allowBase64: true,
+        HTMLAttributes: { class: 'editor-image', draggable: 'true' },
+      }),
       Link.configure({
         openOnClick: true,
         autolink: true,
@@ -98,16 +152,34 @@ export function RichTextEditor({
     content,
     editorProps: {
       attributes: { class: 'prose-editor focus:outline-none min-h-[300px] px-1' },
-      handleDrop: (_view, event) => {
+      handleDrop: (view, event, _slice, moved) => {
+        // Internal drags (e.g. repositioning an image) must not create new attachments.
+        if (moved) return false;
+
         const files = Array.from(event.dataTransfer?.files ?? []);
         if (!files.length) return false;
+
         event.preventDefault();
-        files.forEach(onFileDrop);
+        void (async () => {
+          for (const file of files) {
+            if (file.type.startsWith('image/')) {
+              await insertImageFile(file, view, { left: event.clientX, top: event.clientY });
+            } else {
+              await onAddAttachmentRef.current(file);
+            }
+          }
+        })();
         return true;
       },
     },
     onUpdate: ({ editor: ed }) => onUpdate(ed.getHTML()),
   });
+
+  editorRef.current = editor;
+
+  useEffect(() => {
+    if (editor) onEditorReady?.(editor);
+  }, [editor, onEditorReady]);
 
   useEffect(() => {
     if (!editor) return;
@@ -117,40 +189,82 @@ export function RichTextEditor({
     }
   }, [noteId, content, editor]);
 
-  const handleSetLink = () => {
+  const applyLink = (rawUrl: string) => {
     if (!editor) return;
-    const previousUrl = editor.getAttributes('link').href as string | undefined;
+    const url = normalizeUrl(rawUrl);
+    if (!url) {
+      editor.chain().focus().unsetLink().run();
+      return;
+    }
 
-    if (editor.isActive('link')) {
-      const url = window.prompt('Edit link URL (leave empty to remove):', previousUrl ?? '');
-      if (url === null) return;
-      if (!url.trim()) {
-        editor.chain().focus().extendMarkRange('link').unsetLink().run();
-        return;
-      }
+    const { empty } = editor.state.selection;
+    if (empty) {
       editor
         .chain()
         .focus()
-        .extendMarkRange('link')
-        .setLink({ href: normalizeUrl(url) })
+        .insertContent({
+          type: 'text',
+          text: url,
+          marks: [{ type: 'link', attrs: { href: url } }],
+        })
         .run();
       return;
     }
 
-    const url = window.prompt('Enter link URL:');
-    if (!url?.trim()) return;
-    editor
-      .chain()
-      .focus()
-      .extendMarkRange('link')
-      .setLink({ href: normalizeUrl(url) })
-      .run();
+    editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+  };
+
+  const openLinkDialog = () => {
+    if (!editor) return;
+    const previousUrl = editor.getAttributes('link').href as string | undefined;
+    setLinkDialogUrl(previousUrl ?? '');
+    setLinkDialogOpen(true);
+  };
+
+  const setParagraph = () => {
+    if (!editor) return;
+    const chain = editor.chain().focus();
+    if (editor.isActive('bulletList')) chain.toggleBulletList();
+    if (editor.isActive('orderedList')) chain.toggleOrderedList();
+    if (editor.isActive('taskList')) chain.toggleTaskList();
+    chain.setParagraph().run();
+  };
+
+  const toggleHeading = (level: 1 | 2) => {
+    if (!editor) return;
+    if (editor.isActive('heading', { level })) {
+      editor.chain().focus().setParagraph().run();
+      return;
+    }
+    editor.chain().focus().setHeading({ level }).run();
+  };
+
+  const toggleBulletList = () => {
+    if (!editor) return;
+    editor.chain().focus().toggleBulletList().run();
+  };
+
+  const toggleOrderedList = () => {
+    if (!editor) return;
+    editor.chain().focus().toggleOrderedList().run();
+  };
+
+  const toggleTaskList = () => {
+    if (!editor) return;
+    editor.chain().focus().toggleTaskList().run();
   };
 
   const toolbarPad = compact ? '-mx-4 px-4' : '-mx-8 px-8';
 
   return (
     <>
+      <LinkDialog
+        open={linkDialogOpen}
+        initialUrl={linkDialogUrl}
+        onSave={applyLink}
+        onClose={() => setLinkDialogOpen(false)}
+      />
+
       {editor && (
         <div className={`flex items-center gap-0.5 ${toolbarPad} py-2 border-b border-border/30 flex-wrap mb-4`}>
           <ToolbarButton
@@ -169,7 +283,7 @@ export function RichTextEditor({
           </ToolbarButton>
           <div className="w-px h-5 bg-border mx-1" />
           <ToolbarButton
-            onClick={handleSetLink}
+            onClick={openLinkDialog}
             active={editor.isActive('link')}
             title="Add link (select text first)"
           >
@@ -185,38 +299,50 @@ export function RichTextEditor({
           )}
           <div className="w-px h-5 bg-border mx-1" />
           <ToolbarButton
-            onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+            onClick={setParagraph}
+            active={
+              !editor.isActive('heading') &&
+              !editor.isActive('bulletList') &&
+              !editor.isActive('orderedList') &&
+              !editor.isActive('taskList')
+            }
+            title="Normal text (exit heading or list)"
+          >
+            <Pilcrow size={16} />
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={() => toggleHeading(1)}
             active={editor.isActive('heading', { level: 1 })}
-            title="H1"
+            title="Heading 1 (current line only)"
           >
             <Heading1 size={16} />
           </ToolbarButton>
           <ToolbarButton
-            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+            onClick={() => toggleHeading(2)}
             active={editor.isActive('heading', { level: 2 })}
-            title="H2"
+            title="Heading 2 (current line only)"
           >
             <Heading2 size={16} />
           </ToolbarButton>
           <div className="w-px h-5 bg-border mx-1" />
           <ToolbarButton
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
+            onClick={toggleBulletList}
             active={editor.isActive('bulletList')}
-            title="Bullets"
+            title="Bullets (current line)"
           >
             <List size={16} />
           </ToolbarButton>
           <ToolbarButton
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
+            onClick={toggleOrderedList}
             active={editor.isActive('orderedList')}
-            title="Numbers"
+            title="Numbers (current line)"
           >
             <ListOrdered size={16} />
           </ToolbarButton>
           <ToolbarButton
-            onClick={() => editor.chain().focus().toggleTaskList().run()}
+            onClick={toggleTaskList}
             active={editor.isActive('taskList')}
-            title="Tasks"
+            title="Tasks (current line)"
           >
             <CheckSquare size={16} />
           </ToolbarButton>
@@ -243,4 +369,28 @@ export function RichTextEditor({
       )}
     </>
   );
+}
+
+/** Insert image(s) from file picker at the current cursor. */
+export async function insertImagesFromFiles(
+  editor: Editor,
+  files: File[],
+  onAddAttachment: (file: File) => Promise<NoteAttachment | null>,
+) {
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) {
+      await onAddAttachment(file);
+      continue;
+    }
+    const attachment = await onAddAttachment(file);
+    if (!attachment) continue;
+    editor
+      .chain()
+      .focus()
+      .insertContent({
+        type: 'image',
+        attrs: { src: attachment.dataUrl, alt: file.name },
+      })
+      .run();
+  }
 }

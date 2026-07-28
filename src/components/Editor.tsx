@@ -4,10 +4,11 @@ import { useStore } from '../store/useStore';
 import { TaskSchedulePanel } from './TaskSchedulePanel';
 import { TagInput } from './TagInput';
 import { MarkdownEditor } from './MarkdownEditor';
-import { RichTextEditor } from './RichTextEditor';
+import { RichTextEditor, insertImagesFromFiles } from './RichTextEditor';
 import { FolderOverview } from './FolderOverview';
 import { ALL_NOTES_ID, isFolderArchived } from '../types';
 import type { NoteAttachment } from '../types';
+import type { Editor as TiptapEditor } from '@tiptap/core';
 
 interface EditorProps {
   noteId?: string;
@@ -44,6 +45,7 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
   const openNoteByTitle = useStore((s) => s.openNoteByTitle);
   const folders = useStore((s) => s.folders);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const richEditorRef = useRef<TiptapEditor | null>(null);
 
   const note = notes.find((n) => n.id === activeNoteId);
   const folder = note ? folders.find((f) => f.id === note.folderId) : null;
@@ -64,39 +66,41 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
     [activeNoteId, updateNote]
   );
 
-  const handleFileDrop = useCallback(
+  const handleAddAttachment = useCallback(
+    async (file: File): Promise<NoteAttachment | null> => {
+      if (!activeNoteId) return null;
+      return addAttachment(activeNoteId, file);
+    },
+    [activeNoteId, addAttachment],
+  );
+
+  const handleMarkdownFileDrop = useCallback(
     async (file: File) => {
       if (!activeNoteId || !note) return;
-      const attachment = await addAttachment(activeNoteId, file);
+      const attachment = await handleAddAttachment(file);
       if (!attachment) return;
-
-      if (file.type.startsWith('image/')) {
-        updateNote(activeNoteId, {
-          content: note.content + `<p><img src="${attachment.dataUrl}" alt="${file.name}" /></p>`,
-        });
-        return;
-      }
 
       if (isMarkdown) {
         updateNote(activeNoteId, {
           content: `${note.content}\n[📎 ${file.name}](${attachment.dataUrl})\n`,
         });
-      } else {
-        updateNote(activeNoteId, {
-          content:
-            note.content +
-            `<p><a href="${attachment.dataUrl}" download="${file.name}" class="note-link">📎 ${file.name}</a></p>`,
-        });
       }
     },
-    [activeNoteId, addAttachment, updateNote, note, isMarkdown]
+    [activeNoteId, handleAddAttachment, updateNote, note, isMarkdown],
   );
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     e.target.value = '';
+    if (!files.length) return;
+
+    if (richEditorRef.current) {
+      await insertImagesFromFiles(richEditorRef.current, files, handleAddAttachment);
+      return;
+    }
+
     for (const file of files) {
-      await handleFileDrop(file);
+      await handleMarkdownFileDrop(file);
     }
   };
 
@@ -234,11 +238,14 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
 
       <div
         className={`flex-1 overflow-y-auto ${padding} py-3 flex flex-col min-h-0`}
-        onDragOver={(e) => e.preventDefault()}
+        onDragOver={(e) => {
+          if (isMarkdown) e.preventDefault();
+        }}
         onDrop={(e) => {
+          if (!isMarkdown) return;
           e.preventDefault();
           const files = Array.from(e.dataTransfer.files);
-          files.forEach((file) => handleFileDrop(file));
+          files.forEach((file) => void handleMarkdownFileDrop(file));
         }}
       >
         {isMarkdown ? (
@@ -251,7 +258,7 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
                 alert(`No note found matching "${title}"`);
               }
             }}
-            onFileDrop={handleFileDrop}
+            onFileDrop={handleMarkdownFileDrop}
           />
         ) : (
           <RichTextEditor
@@ -259,8 +266,11 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
             noteId={note.id}
             content={note.content}
             onUpdate={handleRichUpdate}
-            onFileDrop={handleFileDrop}
+            onAddAttachment={handleAddAttachment}
             onFileClick={() => fileInputRef.current?.click()}
+            onEditorReady={(ed) => {
+              richEditorRef.current = ed;
+            }}
             compact={compact}
           />
         )}

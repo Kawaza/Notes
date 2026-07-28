@@ -121,7 +121,7 @@ body {
 .prose-editor ul[data-type="taskList"] li[data-type="taskItem"] {
   display: flex;
   flex-direction: row;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.625rem;
   margin: 0.35em 0;
   list-style: none;
@@ -133,12 +133,12 @@ body {
   align-items: center;
   justify-content: center;
   width: 1.125rem;
-  height: 1lh;
-  min-height: 1.125rem;
+  height: 1.125rem;
   margin: 0;
   padding: 0;
   line-height: 1;
   user-select: none;
+  align-self: center;
 }
 
 .prose-editor ul[data-type="taskList"] li[data-type="taskItem"] > label input[type="checkbox"] {
@@ -149,12 +149,14 @@ body {
   cursor: pointer;
   flex-shrink: 0;
   display: block;
+  vertical-align: middle;
 }
 
 .prose-editor ul[data-type="taskList"] li[data-type="taskItem"] > div {
   flex: 1;
   min-width: 0;
   line-height: 1.7;
+  padding-top: 0;
 }
 
 .prose-editor ul[data-type="taskList"] li[data-type="taskItem"] > div > p {
@@ -458,6 +460,17 @@ button:disabled {
   max-width: 100%;
   border-radius: 8px;
   margin: 0.5em 0;
+  cursor: grab;
+}
+
+.prose-editor img:active {
+  cursor: grabbing;
+}
+
+.prose-editor img.ProseMirror-selectednode,
+.prose-editor .editor-image.ProseMirror-selectednode {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 /* Color palette: Ocean */
