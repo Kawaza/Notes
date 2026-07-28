@@ -9,6 +9,11 @@ import { FolderOverview } from './FolderOverview';
 import { ALL_NOTES_ID, isFolderArchived } from '../types';
 import type { NoteAttachment } from '../types';
 import type { Editor as TiptapEditor } from '@tiptap/core';
+import {
+  getEmbeddedImageAttachmentIds,
+  getEmbeddedImageSrcs,
+  removeEmbeddedImageFromHtml,
+} from '../utils/noteImages';
 
 interface EditorProps {
   noteId?: string;
@@ -61,9 +66,42 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
 
   const handleRichUpdate = useCallback(
     (html: string) => {
-      if (activeNoteId) updateNote(activeNoteId, { content: html });
+      if (!activeNoteId) return;
+      const currentNote = useStore.getState().notes.find((n) => n.id === activeNoteId);
+      if (!currentNote) return;
+
+      updateNote(activeNoteId, { content: html });
+
+      const idsInContent = getEmbeddedImageAttachmentIds(html);
+      const srcsInContent = getEmbeddedImageSrcs(html);
+      for (const attachment of currentNote.attachments) {
+        if (!isImageAttachment(attachment)) continue;
+        const stillEmbedded =
+          (attachment.id && idsInContent.has(attachment.id)) || srcsInContent.has(attachment.dataUrl);
+        if (!stillEmbedded) {
+          removeAttachment(activeNoteId, attachment.id);
+        }
+      }
     },
-    [activeNoteId, updateNote]
+    [activeNoteId, updateNote, removeAttachment],
+  );
+
+  const handleRemoveAttachment = useCallback(
+    (attachmentId: string) => {
+      if (!activeNoteId || !note) return;
+      const attachment = note.attachments.find((a) => a.id === attachmentId);
+      if (attachment && isImageAttachment(attachment) && !isMarkdown) {
+        const nextContent = removeEmbeddedImageFromHtml(note.content, {
+          attachmentId: attachment.id,
+          src: attachment.dataUrl,
+        });
+        if (nextContent !== note.content) {
+          updateNote(activeNoteId, { content: nextContent });
+        }
+      }
+      removeAttachment(activeNoteId, attachmentId);
+    },
+    [activeNoteId, note, isMarkdown, updateNote, removeAttachment],
   );
 
   const handleAddAttachment = useCallback(
@@ -298,7 +336,7 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
                     </button>
                   )}
                   <button
-                    onClick={() => removeAttachment(note.id, a.id)}
+                    onClick={() => handleRemoveAttachment(a.id)}
                     className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-destructive text-white text-xs opacity-0 group-hover:opacity-100 max-md:opacity-100 cursor-pointer flex items-center justify-center"
                   >
                     ×

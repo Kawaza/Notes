@@ -121,7 +121,7 @@ body {
 .prose-editor ul[data-type="taskList"] li[data-type="taskItem"] {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.625rem;
   margin: 0.35em 0;
   list-style: none;
@@ -132,24 +132,45 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.125rem;
-  height: 1.125rem;
-  margin: 0;
+  width: 1rem;
+  height: 1rem;
+  margin: calc((1.7em - 1rem) / 2) 0 0;
   padding: 0;
   line-height: 1;
   user-select: none;
-  align-self: center;
+}
+
+.prose-editor ul[data-type="taskList"] li[data-type="taskItem"] > label > span {
+  display: none;
 }
 
 .prose-editor ul[data-type="taskList"] li[data-type="taskItem"] > label input[type="checkbox"] {
-  accent-color: var(--color-primary);
+  appearance: none;
+  -webkit-appearance: none;
   width: 1rem;
   height: 1rem;
   margin: 0;
   cursor: pointer;
   flex-shrink: 0;
   display: block;
-  vertical-align: middle;
+  border: 1.5px solid color-mix(in srgb, var(--color-muted-foreground) 50%, transparent);
+  border-radius: 0.25rem;
+  background-color: var(--color-background);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 0.75rem;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.prose-editor ul[data-type="taskList"] li[data-type="taskItem"] > label input[type="checkbox"]:checked {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='white'%3E%3Cpath d='M12.207 4.793a1 1 0 0 1 0 1.414l-5 5a1 1 0 0 1-1.414 0l-2.5-2.5a1 1 0 0 1 1.414-1.414L6.5 9.086l4.293-4.293a1 1 0 0 1 1.414 0z'/%3E%3C/svg%3E");
+}
+
+.prose-editor ul[data-type="taskList"] li[data-type="taskItem"] > label input[type="checkbox"]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
+  outline-offset: 1px;
 }
 
 .prose-editor ul[data-type="taskList"] li[data-type="taskItem"] > div {
@@ -293,10 +314,22 @@ body {
   flex-shrink: 0;
   width: 1rem;
   height: 1rem;
-  margin: 0;
-  margin-top: calc((1lh - 1rem) / 2);
-  accent-color: var(--color-primary);
+  margin: calc((1.7em - 1rem) / 2) 0 0;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1.5px solid color-mix(in srgb, var(--color-muted-foreground) 50%, transparent);
+  border-radius: 0.25rem;
+  background-color: var(--color-background);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 0.75rem;
   cursor: pointer;
+}
+
+.markdown-preview li:has(> input[type="checkbox"]) input[type="checkbox"]:checked {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='white'%3E%3Cpath d='M12.207 4.793a1 1 0 0 1 0 1.414l-5 5a1 1 0 0 1-1.414 0l-2.5-2.5a1 1 0 0 1 1.414-1.414L6.5 9.086l4.293-4.293a1 1 0 0 1 1.414 0z'/%3E%3C/svg%3E");
 }
 .calendar-container .fc {
   --fc-border-color: var(--color-border);

@@ -43,8 +43,11 @@ function getTrayIcon(palette, theme) {
   return getBrandIcon(palette, theme, 16) ?? nativeImage.createEmpty();
 }
 
-function getWindowIcon(palette, theme) {
-  return getBrandIcon(palette, theme, 256) ?? getBrandIcon('default', 'light', 256);
+function getWindowIcon(_palette, _theme) {
+  const windowIcon = loadIconFromFile('window-icon.png');
+  if (windowIcon) return windowIcon;
+
+  return getBrandIcon('default', 'light', 256) ?? loadIconFromSvg('#6366f1', 256);
 }
 
 module.exports = { getTrayIcon, getWindowIcon, logoSvg };

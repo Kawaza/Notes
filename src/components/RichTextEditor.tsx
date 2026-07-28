@@ -6,7 +6,6 @@ import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import Placeholder from '@tiptap/extension-placeholder';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
-import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import { common, createLowlight } from 'lowlight';
 import {
@@ -25,6 +24,7 @@ import {
 } from 'lucide-react';
 import type { NoteAttachment } from '../types';
 import { LinkDialog } from './LinkDialog';
+import { NoteImage } from './NoteImageExtension';
 
 const lowlight = createLowlight(common);
 
@@ -113,7 +113,11 @@ export function RichTextEditor({
         .focus()
         .insertContentAt(pos, {
           type: 'image',
-          attrs: { src: attachment.dataUrl, alt: file.name },
+          attrs: {
+            src: attachment.dataUrl,
+            alt: file.name,
+            attachmentId: attachment.id,
+          },
         })
         .run();
       return true;
@@ -132,7 +136,7 @@ export function RichTextEditor({
       Placeholder.configure({ placeholder: 'Start writing or paste a link...' }),
       TaskList,
       TaskItem.configure({ nested: true }),
-      Image.configure({
+      NoteImage.configure({
         inline: false,
         allowBase64: true,
         HTMLAttributes: { class: 'editor-image', draggable: 'true' },
@@ -389,7 +393,11 @@ export async function insertImagesFromFiles(
       .focus()
       .insertContent({
         type: 'image',
-        attrs: { src: attachment.dataUrl, alt: file.name },
+        attrs: {
+          src: attachment.dataUrl,
+          alt: file.name,
+          attachmentId: attachment.id,
+        },
       })
       .run();
   }

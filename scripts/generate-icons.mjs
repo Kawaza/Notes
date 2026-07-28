@@ -61,17 +61,18 @@ for (const palette of Object.keys(PALETTE_PRIMARY)) {
   }
 }
 
-await writeIcon(lightSource, path.join(buildDir, 'icon.png'), 512);
-const icoSizes = await Promise.all(
+await writeIcon(lightSource, path.join(iconsDir, 'icon.png'), 256);
+await writeIcon(darkSource, path.join(buildDir, 'icon.png'), 512);
+await writeIcon(darkSource, path.join(iconsDir, 'window-icon.png'), 256);
+const taskbarIcoSizes = await Promise.all(
   [256, 48, 32, 16].map(async (size) => {
-    return sharp(lightSource)
+    return sharp(darkSource)
       .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
       .png()
       .toBuffer();
   }),
 );
-fs.writeFileSync(path.join(buildDir, 'icon.ico'), await toIco(icoSizes));
-await writeIcon(lightSource, path.join(iconsDir, 'icon.png'), 256);
+fs.writeFileSync(path.join(buildDir, 'icon.ico'), await toIco(taskbarIcoSizes));
 await writeIcon(lightSource, path.join(publicDir, 'favicon.png'), 512);
 await writeIcon(darkSource, path.join(publicDir, 'favicon-dark.png'), 512);
 await writeIcon(lightSource, path.join(publicDir, 'logo-icon.png'), 512);
