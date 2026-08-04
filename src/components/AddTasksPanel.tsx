@@ -15,15 +15,20 @@ export function AddTasksPanel({ open, onClose }: AddTasksPanelProps) {
   const folders = useStore((s) => s.folders);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const unscheduledTasks = useMemo(
+  const tasks = useMemo(
     () =>
       notes
         .filter((n) => {
-          if (!n.isTask || n.scheduledAt) return false;
+          if (!n.isTask) return false;
           const folder = folders.find((f) => f.id === n.folderId);
           return !isFolderArchived(folder);
         })
-        .sort((a, b) => a.title.localeCompare(b.title)),
+        .sort((a, b) => {
+          if (!a.scheduledAt && !b.scheduledAt) return a.title.localeCompare(b.title);
+          if (!a.scheduledAt) return -1;
+          if (!b.scheduledAt) return 1;
+          return a.title.localeCompare(b.title);
+        }),
     [notes, folders],
   );
 
@@ -40,7 +45,7 @@ export function AddTasksPanel({ open, onClose }: AddTasksPanelProps) {
     });
 
     return () => draggable.destroy();
-  }, [open, unscheduledTasks.length]);
+  }, [open, tasks.length]);
 
   if (!open) return null;
 
@@ -61,11 +66,13 @@ export function AddTasksPanel({ open, onClose }: AddTasksPanelProps) {
         </button>
       </div>
 
-      {unscheduledTasks.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-2">No unscheduled tasks. Create tasks from a folder overview.</p>
+      {tasks.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-2">
+          No tasks yet. Create tasks from a folder overview, or click the calendar to add one.
+        </p>
       ) : (
         <div ref={listRef} className="flex flex-wrap gap-2 max-h-40 overflow-y-auto py-1">
-          {unscheduledTasks.map((task) => {
+          {tasks.map((task) => {
             const folder = folders.find((f) => f.id === task.folderId);
             const color = getCalendarColor(folder?.calendarColor ?? task.calendarColor);
             return (
@@ -80,6 +87,9 @@ export function AddTasksPanel({ open, onClose }: AddTasksPanelProps) {
                 }}
               >
                 <span className="truncate font-medium">{task.title || 'Untitled task'}</span>
+                {task.scheduledAt && (
+                  <span className="text-[10px] text-muted-foreground shrink-0">Scheduled</span>
+                )}
                 {folder && (
                   <span className="text-[10px] text-muted-foreground shrink-0">{folder.name}</span>
                 )}

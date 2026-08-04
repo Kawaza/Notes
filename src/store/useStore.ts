@@ -112,6 +112,8 @@ function scheduleSave(getState: () => Store) {
 }
 
 function migrateNote(note: Partial<Note> & Pick<Note, 'id' | 'folderId' | 'title' | 'content' | 'createdAt' | 'updatedAt' | 'isTask' | 'order'>): Note {
+  const scheduledAt = note.scheduledAt || undefined;
+  const isTask = note.isTask ?? Boolean(scheduledAt);
   return {
     contentType: note.contentType ?? 'html',
     tags: note.tags ?? [],
@@ -119,6 +121,8 @@ function migrateNote(note: Partial<Note> & Pick<Note, 'id' | 'folderId' | 'title
     attachments: note.attachments ?? [],
     calendarColor: note.calendarColor ?? 'blue',
     ...note,
+    scheduledAt,
+    isTask,
   };
 }
 

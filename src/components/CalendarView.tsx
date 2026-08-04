@@ -4,11 +4,11 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
-import type { EventClickArg, EventDropArg } from '@fullcalendar/core';
+import type { EventClickArg, EventDropArg, DateSelectArg } from '@fullcalendar/core';
 import type { EventResizeDoneArg, DropArg } from '@fullcalendar/interaction';
 import { ListPlus, Trash2, Archive } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { isFolderArchived } from '../types';
+import { DEFAULT_FOLDER_ID, isFolderArchived } from '../types';
 import { getEventStyle } from '../constants/calendarColors';
 import { Editor } from './Editor';
 import { ContextMenu } from './ContextMenu';
@@ -20,6 +20,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const notes = useStore((s) => s.notes);
   const folders = useStore((s) => s.folders);
   const theme = useStore((s) => s.theme);
+  const createNote = useStore((s) => s.createNote);
   const updateNote = useStore((s) => s.updateNote);
   const deleteNote = useStore((s) => s.deleteNote);
   const archiveNote = useStore((s) => s.archiveNote);
@@ -68,6 +69,21 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
 
   const handleEventClick = (info: EventClickArg) => {
     setPanelNoteId(info.event.id);
+  };
+
+  const handleDateSelect = (info: DateSelectArg) => {
+    const calendarApi = calendarRef.current?.getApi();
+    calendarApi?.unselect();
+
+    const noteId = createNote(DEFAULT_FOLDER_ID, 'New Task', { keepView: true });
+    const folder = folders.find((f) => f.id === DEFAULT_FOLDER_ID);
+    updateNote(noteId, {
+      scheduledAt: info.start.toISOString(),
+      scheduledEnd: info.end?.toISOString(),
+      isTask: true,
+      calendarColor: folder?.calendarColor ?? 'blue',
+    });
+    setPanelNoteId(noteId);
   };
 
   const handleEventDrop = (info: EventDropArg) => {
@@ -152,7 +168,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             <div className="min-w-0">
               <h2 className="text-lg font-medium">Calendar</h2>
               <p className="text-sm text-muted-foreground font-normal hidden sm:block">
-                Drag tasks onto calendar · Click to edit · Right-click for options
+                Click or drag on calendar to add · Drag tasks to schedule · Right-click for options
               </p>
             </div>
           </div>
@@ -184,6 +200,9 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             events={events}
             editable
             droppable
+            selectable
+            selectMirror
+            select={handleDateSelect}
             dayMaxEvents
             nowIndicator={false}
             slotMinTime="06:00:00"
