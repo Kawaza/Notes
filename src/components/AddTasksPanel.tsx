@@ -15,20 +15,15 @@ export function AddTasksPanel({ open, onClose }: AddTasksPanelProps) {
   const folders = useStore((s) => s.folders);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const tasks = useMemo(
+  const outstandingNotes = useMemo(
     () =>
       notes
         .filter((n) => {
-          if (!n.isTask) return false;
+          if (n.scheduledAt) return false;
           const folder = folders.find((f) => f.id === n.folderId);
           return !isFolderArchived(folder);
         })
-        .sort((a, b) => {
-          if (!a.scheduledAt && !b.scheduledAt) return a.title.localeCompare(b.title);
-          if (!a.scheduledAt) return -1;
-          if (!b.scheduledAt) return 1;
-          return a.title.localeCompare(b.title);
-        }),
+        .sort((a, b) => a.title.localeCompare(b.title)),
     [notes, folders],
   );
 
@@ -45,7 +40,7 @@ export function AddTasksPanel({ open, onClose }: AddTasksPanelProps) {
     });
 
     return () => draggable.destroy();
-  }, [open, tasks.length]);
+  }, [open, outstandingNotes.length]);
 
   if (!open) return null;
 
@@ -54,7 +49,7 @@ export function AddTasksPanel({ open, onClose }: AddTasksPanelProps) {
       <div className="flex items-center justify-between mb-2">
         <div>
           <p className="text-sm font-medium">Outstanding tasks</p>
-          <p className="text-xs text-muted-foreground">Drag a task onto the calendar to schedule it</p>
+          <p className="text-xs text-muted-foreground">Drag a note onto the calendar to schedule it</p>
         </div>
         <button
           type="button"
@@ -66,30 +61,27 @@ export function AddTasksPanel({ open, onClose }: AddTasksPanelProps) {
         </button>
       </div>
 
-      {tasks.length === 0 ? (
+      {outstandingNotes.length === 0 ? (
         <p className="text-sm text-muted-foreground py-2">
-          No tasks yet. Create tasks from a folder overview, or click the calendar to add one.
+          All notes are scheduled, or you have no notes yet. Click the calendar to add a new task.
         </p>
       ) : (
         <div ref={listRef} className="flex flex-wrap gap-2 max-h-40 overflow-y-auto py-1">
-          {tasks.map((task) => {
-            const folder = folders.find((f) => f.id === task.folderId);
-            const color = getCalendarColor(folder?.calendarColor ?? task.calendarColor);
+          {outstandingNotes.map((note) => {
+            const folder = folders.find((f) => f.id === note.folderId);
+            const color = getCalendarColor(folder?.calendarColor ?? note.calendarColor);
             return (
               <div
-                key={task.id}
-                data-note-id={task.id}
-                data-title={task.title || 'Untitled task'}
+                key={note.id}
+                data-note-id={note.id}
+                data-title={note.title || 'Untitled note'}
                 className="add-task-draggable fc-event flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-border bg-card text-sm cursor-grab active:cursor-grabbing select-none max-w-full"
                 style={{
                   borderLeftWidth: 3,
                   borderLeftColor: color.border,
                 }}
               >
-                <span className="truncate font-medium">{task.title || 'Untitled task'}</span>
-                {task.scheduledAt && (
-                  <span className="text-[10px] text-muted-foreground shrink-0">Scheduled</span>
-                )}
+                <span className="truncate font-medium">{note.title || 'Untitled note'}</span>
                 {folder && (
                   <span className="text-[10px] text-muted-foreground shrink-0">{folder.name}</span>
                 )}
