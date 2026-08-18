@@ -10,7 +10,6 @@ import {
   importMarkdownFiles,
 } from '../utils/exportImport';
 import type { ColorPalette } from '../types';
-import { DEFAULT_FOLDER_ID } from '../types';
 import type { UpdateUiState } from '../hooks/useAppUpdater';
 import { UpdateSettingsSection } from './UpdateUI';
 
@@ -52,9 +51,12 @@ export function SettingsPanel({
   const getAppData = () => {
     const {
       folders, notes, folderLinks, folderSecrets, theme, colorPalette, selectedFolderId,
-      selectedNoteId, viewMode, selectedTag,
+      selectedNoteId, viewMode, selectedTag, foldersSectionName,
     } = useStore.getState();
-    return { folders, notes, folderLinks, folderSecrets, theme, colorPalette, selectedFolderId, selectedNoteId, viewMode, selectedTag };
+    return {
+      folders, notes, folderLinks, folderSecrets, theme, colorPalette,
+      selectedFolderId, selectedNoteId, viewMode, selectedTag, foldersSectionName,
+    };
   };
 
   const handleExportJson = async () => {
@@ -85,7 +87,7 @@ export function SettingsPanel({
     const files = e.target.files;
     if (!files?.length) return;
     const partials = await importMarkdownFiles(files);
-    partials.forEach((p) => createNoteFromImport(p, DEFAULT_FOLDER_ID));
+    partials.forEach((p) => createNoteFromImport(p));
     e.target.value = '';
   };
 

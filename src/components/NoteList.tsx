@@ -9,7 +9,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useStore } from '../store/useStore';
-import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, isFolderArchived } from '../types';
+import { ALL_NOTES_ID, getNewNoteFolderId, isFolderArchived } from '../types';
 import type { Note, FolderLink } from '../types';
 import { ContextMenu } from './ContextMenu';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -19,12 +19,6 @@ import { OverflowMenu } from './OverflowMenu';
 import { MobileNavButton } from './MobileNavButton';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { openExternalUrl } from '../utils/openExternal';
-
-function getNewNoteFolderId(selectedFolderId: string | null): string {
-  return selectedFolderId && selectedFolderId !== ALL_NOTES_ID
-    ? selectedFolderId
-    : DEFAULT_FOLDER_ID;
-}
 
 function useDisplayedNotes() {
   const allNotes = useStore((s) => s.notes);
@@ -37,6 +31,7 @@ function useDisplayedNotes() {
       filtered = filtered.filter((n) => n.folderId === selectedFolderId);
     } else if (selectedFolderId === ALL_NOTES_ID) {
       filtered = filtered.filter((n) => {
+        if (!n.folderId) return true;
         const folder = folders.find((f) => f.id === n.folderId);
         return !isFolderArchived(folder);
       });
@@ -332,9 +327,10 @@ function SortableNoteListItem({
   });
 
   const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
+    transform: isDragging ? undefined : CSS.Transform.toString(transform),
+    transition: isDragging ? undefined : transition,
+    opacity: isDragging ? 0.35 : 1,
+    pointerEvents: isDragging ? ('none' as const) : undefined,
   };
 
   const dragHandle = (
@@ -390,6 +386,7 @@ export function NoteList({
 
   const handleSaveLink = (title: string, url: string) => {
     const folderId = getNewNoteFolderId(selectedFolderId);
+    if (!folderId) return;
     createFolderLink(folderId, title, url);
   };
 

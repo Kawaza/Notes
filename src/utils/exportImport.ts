@@ -36,7 +36,7 @@ export async function exportAsMarkdownZip(data: AppData): Promise<Blob> {
   const folderMap = Object.fromEntries(data.folders.map((f) => [f.id, f.name]));
 
   data.notes.forEach((note) => {
-    const folderName = folderMap[note.folderId] || 'Other Notes';
+    const folderName = note.folderId ? (folderMap[note.folderId] ?? 'Unfiled') : 'Unfiled';
     const filename = `${sanitizeFilename(note.title)}.md`;
     zip.file(`${folderName}/${filename}`, noteToMarkdown(note, folderName));
   });

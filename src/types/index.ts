@@ -4,6 +4,10 @@ export interface Folder {
   order: number;
   calendarColor?: string;
   archived?: boolean;
+  /** Groups child folders (e.g. Work, Personal). Cannot hold notes directly. */
+  isParent?: boolean;
+  /** Child folder id when nested under a parent folder. */
+  parentId?: string | null;
 }
 
 export interface FolderLink {
@@ -41,7 +45,8 @@ export interface NoteAttachment {
 
 export interface Note {
   id: string;
-  folderId: string;
+  /** Null when the note is only listed under All Notes (no folder). */
+  folderId: string | null;
   title: string;
   content: string;
   contentType: 'html' | 'markdown';
@@ -73,10 +78,54 @@ export function folderIdFromSortable(sortableId: string) {
     : sortableId;
 }
 export const ALL_NOTES_ID = 'all';
+/** Legacy inbox id — stripped on migrate; notes/folders referencing it become unfiled. */
 export const DEFAULT_FOLDER_ID = 'inbox';
+export const DEFAULT_FOLDERS_SECTION_NAME = 'Folders';
+export const FOLDER_ROOT_DROP_ID = 'folder-section-root';
+export const ARCHIVE_DROP_ID = 'archive-drop';
+
+export function parentDropId(parentId: string) {
+  return `parent-drop-${parentId}`;
+}
+
+export function parentBodyDropId(parentId: string) {
+  return `parent-drop-${parentId}-body`;
+}
+
+export function isParentDropId(id: string) {
+  return id.startsWith('parent-drop-');
+}
+
+/** True for per-folder note drop targets (`folder-{id}`), not section drop zones. */
+export function isNoteFolderDroppableId(id: string) {
+  return id.startsWith('folder-') && id !== FOLDER_ROOT_DROP_ID;
+}
+
+export function parentIdFromDropId(id: string) {
+  return id.slice('parent-drop-'.length).replace(/-body$/, '');
+}
 
 export function isFolderArchived(folder: Folder | undefined): boolean {
   return folder?.archived ?? false;
+}
+
+export function isParentFolder(folder: Folder | undefined): boolean {
+  return folder?.isParent ?? false;
+}
+
+export function isNoteFolder(folder: Folder | undefined): boolean {
+  return Boolean(folder) && !isFolderArchived(folder) && !isParentFolder(folder);
+}
+
+/** Folder id for a newly created note from the current sidebar selection. */
+export function getNewNoteFolderId(selectedFolderId: string | null): string | null {
+  return selectedFolderId && selectedFolderId !== ALL_NOTES_ID ? selectedFolderId : null;
+}
+
+export function notesInFolder(notes: Note[], folderId: string | null): Note[] {
+  return folderId
+    ? notes.filter((n) => n.folderId === folderId)
+    : notes.filter((n) => !n.folderId);
 }
 
 export interface AppData {
@@ -90,6 +139,8 @@ export interface AppData {
   selectedNoteId: string | null;
   viewMode: ViewMode;
   selectedTag: string | null;
+  /** Sidebar label for the root folders section (default: "Folders"). */
+  foldersSectionName: string;
 }
 
 export interface NoteTemplate {

@@ -8,7 +8,7 @@ import type { EventClickArg, EventDropArg, DateSelectArg } from '@fullcalendar/c
 import type { EventResizeDoneArg, DropArg } from '@fullcalendar/interaction';
 import { ListPlus, Trash2, Archive } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { DEFAULT_FOLDER_ID, isFolderArchived } from '../types';
+import { isFolderArchived } from '../types';
 import { getEventStyle } from '../constants/calendarColors';
 import { Editor } from './Editor';
 import { ContextMenu } from './ContextMenu';
@@ -43,13 +43,14 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
     return () => clearInterval(id);
   }, []);
 
-  const getFolderColor = (folderId: string) =>
-    folders.find((f) => f.id === folderId)?.calendarColor ?? 'blue';
+  const getFolderColor = (folderId: string | null) =>
+    (folderId ? folders.find((f) => f.id === folderId)?.calendarColor : null) ?? 'blue';
 
   const events = useMemo(() => {
     return notes
       .filter((n) => {
         if (!n.scheduledAt) return false;
+        if (!n.folderId) return true;
         const folder = folders.find((f) => f.id === n.folderId);
         return !isFolderArchived(folder);
       })
@@ -75,13 +76,12 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
     const calendarApi = calendarRef.current?.getApi();
     calendarApi?.unselect();
 
-    const noteId = createNote(DEFAULT_FOLDER_ID, 'New Task', { keepView: true });
-    const folder = folders.find((f) => f.id === DEFAULT_FOLDER_ID);
+    const noteId = createNote(null, 'New Task', { keepView: true });
     updateNote(noteId, {
       scheduledAt: info.start.toISOString(),
       scheduledEnd: info.end?.toISOString(),
       isTask: true,
-      calendarColor: folder?.calendarColor ?? 'blue',
+      calendarColor: 'blue',
     });
     setPanelNoteId(noteId);
   };

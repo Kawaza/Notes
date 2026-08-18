@@ -1,13 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, FolderOpen } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { getCalendarColor, type CalendarColor } from '../constants/calendarColors';
-import { isFolderArchived } from '../types';
+import { isFolderArchived, isParentFolder } from '../types';
 
 type FolderSelectProps = {
-  value: string;
-  onChange: (folderId: string) => void;
+  value: string | null;
+  onChange: (folderId: string | null) => void;
   size?: 'sm' | 'md';
   className?: string;
 };
@@ -27,7 +27,7 @@ function folderDotStyle(color: CalendarColor, isDark: boolean) {
 }
 
 function estimateMenuHeight(count: number) {
-  return count * 30 + 8;
+  return (count + 1) * 30 + 8;
 }
 
 export function FolderSelect({ value, onChange, size = 'md', className = '' }: FolderSelectProps) {
@@ -39,11 +39,37 @@ export function FolderSelect({ value, onChange, size = 'md', className = '' }: F
   const menuRef = useRef<HTMLDivElement>(null);
 
   const activeFolders = useMemo(
-    () => folders.filter((f) => !isFolderArchived(f)),
+    () =>
+      folders
+        .filter((f) => !isFolderArchived(f) && !isParentFolder(f))
+        .sort((a, b) => {
+          if (a.parentId === b.parentId) return a.order - b.order;
+          if (a.parentId === b.id) return 1;
+          if (b.parentId === a.id) return -1;
+          return a.order - b.order;
+        }),
     [folders],
   );
 
-  const selected = activeFolders.find((f) => f.id === value) ?? activeFolders[0];
+  const folderLabels = useMemo(() => {
+    const parentNames = new Map(
+      folders.filter((f) => f.isParent).map((f) => [f.id, f.name]),
+    );
+    return activeFolders.map((folder) => ({
+      folder,
+      label: folder.parentId
+        ? `${parentNames.get(folder.parentId) ?? 'Group'} / ${folder.name}`
+        : folder.name,
+      indent: Boolean(folder.parentId),
+    }));
+  }, [activeFolders, folders]);
+
+  const selected = value ? activeFolders.find((f) => f.id === value) : null;
+  const selectedLabel = selected
+    ? (selected.parentId
+        ? `${folders.find((f) => f.id === selected.parentId)?.name ?? 'Group'} / ${selected.name}`
+        : selected.name)
+    : 'No folder';
   const isDark = theme === 'dark';
 
   const computeMenuPosition = () => {
@@ -125,7 +151,20 @@ export function FolderSelect({ value, onChange, size = 'md', className = '' }: F
               visibility: menuPos ? 'visible' : 'hidden',
             }}
           >
-            {activeFolders.map((folder) => {
+            <button
+              type="button"
+              onClick={() => {
+                onChange(null);
+                setOpen(false);
+              }}
+              className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors cursor-pointer ${
+                value === null ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
+              }`}
+            >
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
+              <span className="truncate">No folder</span>
+            </button>
+            {folderLabels.map(({ folder, label, indent }) => {
               const color = getCalendarColor(folder.calendarColor);
               const isSelected = folder.id === value;
               return (
@@ -136,7 +175,9 @@ export function FolderSelect({ value, onChange, size = 'md', className = '' }: F
                     onChange(folder.id);
                     setOpen(false);
                   }}
-                  className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors cursor-pointer ${
+                  className={`w-full flex items-center gap-2 py-1.5 text-left text-xs transition-colors cursor-pointer ${
+                    indent ? 'pl-5 pr-2.5' : 'px-2.5'
+                  } ${
                     isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
                   }`}
                 >
@@ -144,7 +185,7 @@ export function FolderSelect({ value, onChange, size = 'md', className = '' }: F
                     className="h-1.5 w-1.5 shrink-0 rounded-full"
                     style={folderDotStyle(color, isDark)}
                   />
-                  <span className="truncate">{folder.name}</span>
+                  <span className="truncate">{label}</span>
                 </button>
               );
             })}
@@ -164,18 +205,18 @@ export function FolderSelect({ value, onChange, size = 'md', className = '' }: F
         aria-expanded={open}
         aria-haspopup="listbox"
       >
-        {selected ? (
+        {value ? (
           <>
             <span
               className="h-1.5 w-1.5 shrink-0 rounded-full"
-              style={folderDotStyle(getCalendarColor(selected.calendarColor), isDark)}
+              style={folderDotStyle(getCalendarColor(selected!.calendarColor), isDark)}
             />
-            <span className="flex-1 truncate text-left">{selected.name}</span>
+            <span className="flex-1 truncate text-left">{selectedLabel}</span>
           </>
         ) : (
           <>
-            <FolderOpen size={chevronSize} className="shrink-0 text-muted-foreground" />
-            <span className="flex-1 truncate text-left text-muted-foreground">Folder</span>
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
+            <span className="flex-1 truncate text-left text-muted-foreground">{selectedLabel}</span>
           </>
         )}
         <ChevronDown

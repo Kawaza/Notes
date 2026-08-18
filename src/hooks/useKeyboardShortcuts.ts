@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useStore } from '../store/useStore';
-import { ALL_NOTES_ID, DEFAULT_FOLDER_ID } from '../types';
+import { getNewNoteFolderId } from '../types';
 
 export function useKeyboardShortcuts() {
   const setSearchOpen = useStore((s) => s.setSearchOpen);
@@ -17,11 +17,7 @@ export function useKeyboardShortcuts() {
         setSearchOpen(true);
       } else if (mod && e.key === 'n') {
         e.preventDefault();
-        const folderId =
-          selectedFolderId && selectedFolderId !== ALL_NOTES_ID
-            ? selectedFolderId
-            : DEFAULT_FOLDER_ID;
-        createNote(folderId);
+        createNote(getNewNoteFolderId(selectedFolderId));
       } else if (mod && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
         e.preventDefault();
         toggleTheme();

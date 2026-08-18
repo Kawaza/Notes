@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   DndContext,
-  closestCenter,
   KeyboardSensor,
+  MeasuringStrategy,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
-  DragOverlay,
+  type DragOverEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { useStore } from './store/useStore';
@@ -18,11 +19,30 @@ import { CalendarView } from './components/CalendarView';
 import { FolderOverview } from './components/FolderOverview';
 import { GlobalSearch } from './components/GlobalSearch';
 import { SettingsPanel } from './components/SettingsPanel';
+import { DndDragOverlay } from './components/DndDragOverlay';
 import { UpdateBanner } from './components/UpdateUI';
 import { useAppUpdater } from './hooks/useAppUpdater';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { applyPalette } from './constants/palettes';
-import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, SORTABLE_FOLDER_PREFIX, folderIdFromSortable, isFolderArchived } from './types';
+import {
+  expandParentSection,
+  folderDragCollisionDetection,
+  normalizeFolderDragOverId,
+  resolveFolderDragOverId,
+} from './utils/folderDragCollision';
+import { dndLog, dndFail } from './utils/dndDebug';
+import {
+  ALL_NOTES_ID,
+  SORTABLE_FOLDER_PREFIX,
+  folderIdFromSortable,
+  getNewNoteFolderId,
+  isFolderArchived,
+  ARCHIVE_DROP_ID,
+  FOLDER_ROOT_DROP_ID,
+  isParentDropId,
+  isNoteFolderDroppableId,
+  parentIdFromDropId,
+} from './types';
 import { useIsMobile } from './hooks/useIsMobile';
 
 export default function App() {
@@ -44,6 +64,10 @@ export default function App() {
   const moveNote = useStore((s) => s.moveNote);
   const reorderNotes = useStore((s) => s.reorderNotes);
   const reorderFolders = useStore((s) => s.reorderFolders);
+  const moveFolderInTree = useStore((s) => s.moveFolderInTree);
+  const archiveFolder = useStore((s) => s.archiveFolder);
+  const folderDragOverRef = useRef<string | null>(null);
+  const lastLoggedOverRef = useRef<string | null>(null);
   const selectedFolderId = useStore((s) => s.selectedFolderId);
   const selectedNoteId = useStore((s) => s.selectedNoteId);
   const mobileNavOpen = useStore((s) => s.mobileNavOpen);
@@ -54,6 +78,7 @@ export default function App() {
 
   const isMobile = useIsMobile();
   const [mobileFolderPane, setMobileFolderPane] = useState<'notes' | 'overview'>('notes');
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
   useEffect(() => {
     setMobileFolderPane('notes');
@@ -105,11 +130,7 @@ export default function App() {
   useEffect(() => {
     if (window.electronAPI?.onQuickCapture) {
       window.electronAPI.onQuickCapture(() => {
-        const folderId =
-          selectedFolderId && selectedFolderId !== ALL_NOTES_ID
-            ? selectedFolderId
-            : DEFAULT_FOLDER_ID;
-        createNote(folderId);
+        createNote(getNewNoteFolderId(selectedFolderId));
       });
     }
   }, [createNote, selectedFolderId]);
@@ -119,24 +140,167 @@ export default function App() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over) return;
+  const handleDragStart = (event: DragStartEvent) => {
+    const activeId = String(event.active.id);
+    setActiveDragId(activeId);
+    lastLoggedOverRef.current = null;
+    dndLog('dragStart', {
+      activeId,
+      type: activeId.startsWith(SORTABLE_FOLDER_PREFIX) ? 'folder' : 'note',
+    });
+  };
 
-    const activeId = active.id as string;
-    const overId = over.id as string;
+  const clearDragState = () => {
+    setActiveDragId(null);
+    folderDragOverRef.current = null;
+    lastLoggedOverRef.current = null;
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const rawOverId = event.over?.id ? String(event.over.id) : null;
+    if (!rawOverId) {
+      // Keep last valid target — pointer can briefly leave all droppables on release.
+      return;
+    }
+
+    const overId = normalizeFolderDragOverId(rawOverId);
+    folderDragOverRef.current = overId;
+
+    if (overId !== lastLoggedOverRef.current) {
+      lastLoggedOverRef.current = overId;
+      dndLog('dragOver', {
+        activeId: String(event.active.id),
+        rawOverId,
+        overId,
+      });
+    }
+
+    if (isParentDropId(overId)) {
+      expandParentSection(parentIdFromDropId(overId));
+    }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const activeId = event.active.id as string;
+    const lastOverId = folderDragOverRef.current;
+    const overId = resolveFolderDragOverId(event, lastOverId);
+
+    dndLog('dragEnd', {
+      activeId,
+      overId,
+      eventOver: event.over?.id ?? null,
+      lastOverId,
+      collisionIds: (event.collisions ?? []).map((c) => c.id),
+    });
+
+    try {
+      if (!overId) {
+        dndFail('no drop target resolved', {
+          activeId,
+          eventOver: event.over?.id ?? null,
+          lastOverId,
+          collisionIds: (event.collisions ?? []).map((c) => c.id),
+        });
+        return;
+      }
 
     if (activeId.startsWith(SORTABLE_FOLDER_PREFIX)) {
-      if (!overId.startsWith(SORTABLE_FOLDER_PREFIX)) return;
-      const folders = [...useStore.getState().folders]
-        .filter((f) => !isFolderArchived(f))
-        .sort((a, b) => a.order - b.order);
-      const folderIds = folders.map((f) => f.id);
+      const folders = [...useStore.getState().folders].filter((f) => !isFolderArchived(f));
       const activeFolderId = folderIdFromSortable(activeId);
+      const activeFolder = folders.find((f) => f.id === activeFolderId);
+
+      if (!activeFolder) {
+        dndFail('folder drag: active folder not found', { activeFolderId });
+        return;
+      }
+      if (activeFolder.isParent) {
+        dndFail('folder drag: cannot move parent folder rows', { activeFolderId });
+        return;
+      }
+
+      if (overId === ARCHIVE_DROP_ID) {
+        dndLog('folder drag → archive', { activeFolderId });
+        archiveFolder(activeFolderId);
+        return;
+      }
+
+      if (overId === FOLDER_ROOT_DROP_ID) {
+        dndLog('folder drag → root', {
+          activeFolderId,
+          hadParent: Boolean(activeFolder.parentId),
+        });
+        if (activeFolder.parentId) {
+          moveFolderInTree(activeFolderId, { parentId: null });
+        }
+        return;
+      }
+
+      if (isParentDropId(overId)) {
+        const parentId = parentIdFromDropId(overId);
+        const parent = folders.find((f) => f.id === parentId);
+        dndLog('folder drag → parent drop', {
+          activeFolderId,
+          activeFolderName: activeFolder.name,
+          activeParentId: activeFolder.parentId ?? null,
+          targetParentId: parentId,
+          targetParentName: parent?.name ?? '?',
+          targetIsParent: parent?.isParent ?? false,
+          willMove: activeFolder.parentId !== parentId,
+        });
+        if (activeFolder.parentId !== parentId) {
+          moveFolderInTree(activeFolderId, { parentId });
+          expandParentSection(parentId);
+        }
+        return;
+      }
+
+      if (!overId.startsWith(SORTABLE_FOLDER_PREFIX)) {
+        dndFail('folder drag: unexpected drop target', { overId, activeFolderId });
+        return;
+      }
+
       const overFolderId = folderIdFromSortable(overId);
+      const overFolder = folders.find((f) => f.id === overFolderId);
+      if (!overFolder) {
+        dndLog('folder drag → abort', { reason: 'overFolder not found', overFolderId });
+        return;
+      }
+      if (overFolder.isParent) {
+        dndLog('folder drag → abort', { reason: 'overFolder is parent', overFolderId });
+        return;
+      }
+
+      const activeParent = activeFolder.parentId ?? null;
+      const overParent = overFolder.parentId ?? null;
+
+      if (activeParent !== overParent) {
+        dndLog('folder drag → cross-parent via folder', {
+          activeFolderId,
+          activeFolderName: activeFolder.name,
+          overFolderId,
+          overFolderName: overFolder.name,
+          fromParentId: activeParent,
+          toParentId: overParent,
+        });
+        moveFolderInTree(activeFolderId, {
+          parentId: overParent,
+          insertBeforeId: overFolderId,
+        });
+        if (overParent) expandParentSection(overParent);
+        return;
+      }
+
+      const siblings = folders
+        .filter((f) => (f.parentId ?? null) === activeParent)
+        .sort((a, b) => a.order - b.order);
+      const folderIds = siblings.map((f) => f.id);
       const oldIndex = folderIds.indexOf(activeFolderId);
       const newIndex = folderIds.indexOf(overFolderId);
-      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+      dndLog('folder drag → reorder', { activeFolderId, overFolderId, oldIndex, newIndex });
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
+        dndLog('folder drag → abort', { reason: 'invalid reorder indices', oldIndex, newIndex });
+        return;
+      }
       const newOrder = [...folderIds];
       newOrder.splice(oldIndex, 1);
       newOrder.splice(newIndex, 0, activeFolderId);
@@ -146,29 +310,64 @@ export default function App() {
 
     const noteId = activeId;
 
-    if (overId.startsWith('folder-')) {
-      moveNote(noteId, overId.replace('folder-', ''));
+    if (isParentDropId(overId)) {
+      const parentId = parentIdFromDropId(overId);
+      const childFolders = useStore
+        .getState()
+        .folders.filter(
+          (f) => !isFolderArchived(f) && !f.isParent && f.parentId === parentId,
+        )
+        .sort((a, b) => a.order - b.order);
+      dndLog('note drag → parent drop', {
+        noteId,
+        parentId,
+        childCount: childFolders.length,
+        childNames: childFolders.map((f) => f.name),
+        willMove: childFolders.length > 0,
+      });
+      if (childFolders.length > 0) {
+        moveNote(noteId, childFolders[0].id);
+      }
+      return;
+    }
+
+    if (isNoteFolderDroppableId(overId)) {
+      const targetFolderId = overId.replace('folder-', '');
+      dndLog('note drag → folder droppable', { noteId, targetFolderId });
+      moveNote(noteId, targetFolderId);
       return;
     }
 
     if (overId.startsWith(SORTABLE_FOLDER_PREFIX)) {
-      moveNote(noteId, folderIdFromSortable(overId));
+      const targetFolderId = folderIdFromSortable(overId);
+      dndLog('note drag → sortable folder', { noteId, targetFolderId });
+      moveNote(noteId, targetFolderId);
       return;
     }
 
-    if (selectedFolderId === ALL_NOTES_ID) return;
+    if (!selectedFolderId || selectedFolderId === ALL_NOTES_ID) {
+      dndLog('note drag → abort', { reason: 'all notes view, not a folder target', overId });
+      return;
+    }
 
-    const folderId = selectedFolderId || DEFAULT_FOLDER_ID;
+    const folderId = selectedFolderId;
     const notes = useStore.getState().getNotesByFolder(folderId);
     const noteIds = notes.map((n) => n.id);
     const oldIndex = noteIds.indexOf(noteId);
     const newIndex = noteIds.indexOf(overId);
-    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+    dndLog('note drag → reorder', { noteId, overId, folderId, oldIndex, newIndex });
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
+      dndLog('note drag → abort', { reason: 'invalid reorder indices', oldIndex, newIndex });
+      return;
+    }
 
     const newOrder = [...noteIds];
     newOrder.splice(oldIndex, 1);
     newOrder.splice(newIndex, 0, noteId);
     reorderNotes(folderId, newOrder);
+    } finally {
+      clearDragState();
+    }
   };
 
   if (!hydrated) {
@@ -183,7 +382,19 @@ export default function App() {
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={folderDragCollisionDetection}
+      measuring={{
+        droppable: {
+          strategy: MeasuringStrategy.Always,
+        },
+      }}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragEnd={handleDragEnd}
+      onDragCancel={clearDragState}
+    >
       <div className="h-screen flex flex-col overflow-hidden bg-background text-foreground">
         <UpdateBanner
           state={bannerState}
@@ -248,7 +459,7 @@ export default function App() {
         downloadUpdate={downloadUpdate}
         installUpdate={installUpdate}
       />
-      <DragOverlay />
+      <DndDragOverlay activeId={activeDragId} />
     </DndContext>
   );
 }

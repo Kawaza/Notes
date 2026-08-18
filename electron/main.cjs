@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, MenuItem, nativeImage, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { setupAutoUpdater, onRendererReady, checkForUpdates, downloadUpdate, installUpdate, waitForRendererFlush, resolvePendingFlush, getIsInstallingUpdate } = require('./update.cjs');
@@ -112,7 +112,50 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      spellcheck: true,
     },
+  });
+
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const menu = new Menu();
+
+    if (params.misspelledWord) {
+      for (const suggestion of params.dictionarySuggestions.slice(0, 6)) {
+        menu.append(
+          new MenuItem({
+            label: suggestion,
+            click: () => mainWindow.webContents.replaceMisspelling(suggestion),
+          }),
+        );
+      }
+      if (params.dictionarySuggestions.length > 0) {
+        menu.append(new MenuItem({ type: 'separator' }));
+      }
+      menu.append(
+        new MenuItem({
+          label: 'Add to dictionary',
+          click: () => {
+            mainWindow.webContents.session.addWordToSpellCheckerDictionary(
+              params.misspelledWord,
+            );
+          },
+        }),
+      );
+    }
+
+    if (params.isEditable) {
+      if (menu.items.length > 0) menu.append(new MenuItem({ type: 'separator' }));
+      menu.append(new MenuItem({ role: 'cut' }));
+      menu.append(new MenuItem({ role: 'copy' }));
+      menu.append(new MenuItem({ role: 'paste' }));
+    } else if (params.selectionText) {
+      if (menu.items.length > 0) menu.append(new MenuItem({ type: 'separator' }));
+      menu.append(new MenuItem({ role: 'copy' }));
+    }
+
+    if (menu.items.length > 0) {
+      menu.popup();
+    }
   });
 
   mainWindow.once('ready-to-show', () => {

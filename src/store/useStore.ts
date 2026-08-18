@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import type { AppData, Folder, FolderLink, FolderSecret, Note, NoteAttachment, Theme, ViewMode, ColorPalette } from '../types';
-import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, isFolderArchived } from '../types';
+import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, DEFAULT_FOLDERS_SECTION_NAME, isFolderArchived, notesInFolder } from '../types';
 import { htmlToMarkdown, markdownToHtml } from '../utils/markdown';
+import { dndLog } from '../utils/dndDebug';
 
 const defaultData: AppData = {
-  folders: [{ id: DEFAULT_FOLDER_ID, name: 'Other Notes', order: 0, calendarColor: 'blue' }],
+  folders: [],
   notes: [],
   folderLinks: [],
   folderSecrets: [],
@@ -15,6 +16,7 @@ const defaultData: AppData = {
   selectedNoteId: null,
   viewMode: 'notes',
   selectedTag: null,
+  foldersSectionName: DEFAULT_FOLDERS_SECTION_NAME,
 };
 
 interface Store extends AppData {
@@ -39,13 +41,21 @@ interface Store extends AppData {
   setSettingsOpen: (open: boolean) => void;
   setMobileNavOpen: (open: boolean) => void;
   closeMobileNav: () => void;
-  createFolder: (name: string) => void;
+  createFolder: (
+    name: string,
+    options?: { parentId?: string | null; isParent?: boolean },
+  ) => string;
   renameFolder: (id: string, name: string) => void;
+  setFoldersSectionName: (name: string) => void;
   updateFolder: (id: string, updates: Partial<Pick<Folder, 'name' | 'calendarColor'>>) => void;
   reorderFolders: (folderIds: string[]) => void;
+  moveFolderInTree: (
+    folderId: string,
+    target: { parentId: string | null; insertBeforeId?: string },
+  ) => void;
   deleteFolder: (id: string) => void;
-  createNote: (folderId: string, title?: string, options?: { keepView?: boolean }) => string;
-  createNoteFromImport: (partial: Partial<Note>, folderId?: string) => string;
+  createNote: (folderId?: string | null, title?: string, options?: { keepView?: boolean }) => string;
+  createNoteFromImport: (partial: Partial<Note>, folderId?: string | null) => string;
   updateNote: (id: string, updates: Partial<Note>) => void;
   deleteNote: (id: string) => void;
   duplicateNote: (id: string) => string;
@@ -54,8 +64,8 @@ interface Store extends AppData {
   restoreFolder: (id: string) => void;
   togglePinNote: (id: string) => void;
   togglePinFolderLink: (id: string) => void;
-  moveNote: (noteId: string, folderId: string) => void;
-  reorderNotes: (folderId: string, noteIds: string[]) => void;
+  moveNote: (noteId: string, folderId: string | null) => void;
+  reorderNotes: (folderId: string | null, noteIds: string[]) => void;
   toggleNoteEditorMode: (id: string) => void;
   addTagToNote: (id: string, tag: string) => void;
   removeTagFromNote: (id: string, tag: string) => void;
@@ -78,7 +88,7 @@ interface Store extends AppData {
   deleteFolderSecret: (id: string) => void;
   importData: (data: AppData, merge: boolean) => void;
   getDisplayedNotes: () => Note[];
-  getNotesByFolder: (folderId: string) => Note[];
+  getNotesByFolder: (folderId: string | null) => Note[];
   getPinnedNotes: () => Note[];
   getAllTags: () => string[];
   getScheduledNotes: () => Note[];
@@ -97,6 +107,7 @@ function getPersistableData(state: Store): AppData {
     selectedNoteId: state.selectedNoteId,
     viewMode: state.viewMode,
     selectedTag: state.selectedTag,
+    foldersSectionName: state.foldersSectionName,
   };
 }
 
@@ -111,7 +122,9 @@ function scheduleSave(getState: () => Store) {
   }, 100);
 }
 
-function migrateNote(note: Partial<Note> & Pick<Note, 'id' | 'folderId' | 'title' | 'content' | 'createdAt' | 'updatedAt' | 'isTask' | 'order'>): Note {
+function migrateNote(
+  note: Partial<Note> & Pick<Note, 'id' | 'title' | 'content' | 'createdAt' | 'updatedAt' | 'isTask' | 'order'>,
+): Note {
   const scheduledAt = note.scheduledAt || undefined;
   const isTask = note.isTask ?? Boolean(scheduledAt);
   return {
@@ -121,9 +134,15 @@ function migrateNote(note: Partial<Note> & Pick<Note, 'id' | 'folderId' | 'title
     attachments: note.attachments ?? [],
     calendarColor: note.calendarColor ?? 'blue',
     ...note,
+    folderId: note.folderId ?? null,
     scheduledAt,
     isTask,
   };
+}
+
+function normalizeNoteFolderId(folderId: string | null | undefined, folderIds: Set<string>): string | null {
+  if (!folderId || folderId === DEFAULT_FOLDER_ID || !folderIds.has(folderId)) return null;
+  return folderId;
 }
 
 function migrateFolderLink(link: Partial<FolderLink> & Pick<FolderLink, 'id' | 'folderId' | 'title' | 'url'>): FolderLink {
@@ -140,23 +159,28 @@ function migrateFolder(folder: Folder): Folder {
     ...folder,
     calendarColor: folder.calendarColor ?? 'blue',
     archived: folder.archived ?? false,
+    isParent: folder.isParent ?? false,
+    parentId: folder.parentId ?? null,
   };
 }
 
 function migrateData(data: Partial<AppData>): AppData {
-  const folders = (data.folders ?? defaultData.folders).map((f) =>
-    migrateFolder(
-      f.id === DEFAULT_FOLDER_ID && f.name === 'Inbox'
-        ? { ...f, name: 'Other Notes' }
-        : f,
-    ),
-  );
+  const folders = (data.folders ?? [])
+    .filter((f) => f.id !== DEFAULT_FOLDER_ID)
+    .map((f) => migrateFolder(f));
+  const folderIds = new Set(folders.map((f) => f.id));
   const notes = (data.notes ?? [])
-    .filter((n): n is Note => Boolean(n && typeof n === 'object' && n.id && n.folderId))
-    .map((n) => migrateNote(n));
+    .filter((n): n is Note => Boolean(n && typeof n === 'object' && n.id))
+    .map((n) =>
+      migrateNote({
+        ...n,
+        folderId: normalizeNoteFolderId(n.folderId, folderIds),
+      }),
+    );
   const folderLinks = (data.folderLinks ?? [])
     .filter((l): l is FolderLink => Boolean(l && typeof l === 'object' && l.id && l.folderId && l.url))
     .map((l) => migrateFolderLink(l));
+  const selectedFolderId = data.selectedFolderId;
   return {
     ...defaultData,
     ...data,
@@ -171,9 +195,10 @@ function migrateData(data: Partial<AppData>): AppData {
     })(),
     selectedTag: data.selectedTag ?? null,
     selectedFolderId:
-      data.selectedFolderId === DEFAULT_FOLDER_ID && !data.selectedFolderId
+      !selectedFolderId || selectedFolderId === DEFAULT_FOLDER_ID
         ? ALL_NOTES_ID
-        : (data.selectedFolderId ?? ALL_NOTES_ID),
+        : selectedFolderId,
+    foldersSectionName: data.foldersSectionName?.trim() || DEFAULT_FOLDERS_SECTION_NAME,
   };
 }
 
@@ -226,7 +251,7 @@ export const useStore = create<Store>((set, get) => ({
       notes: [
         migrateNote({
           id: welcomeId,
-          folderId: DEFAULT_FOLDER_ID,
+          folderId: null,
           title: 'Welcome to Notes',
           content: `<h1>Welcome to Notes</h1>
 <p>Your personal note-taking app. Here's what you can do:</p>
@@ -322,21 +347,45 @@ export const useStore = create<Store>((set, get) => ({
   requestFolderDialog: (type) => set({ folderDialogRequest: type }),
   clearFolderDialogRequest: () => set({ folderDialogRequest: null }),
 
-  createFolder: (name) => {
-    const activeCount = get().folders.filter((f) => !isFolderArchived(f)).length;
+  createFolder: (name, options) => {
+    const isParent = options?.isParent ?? false;
+    const parentId = isParent ? null : (options?.parentId ?? null);
+    const parentSections = get().folders.filter(
+      (f) => !isFolderArchived(f) && f.isParent,
+    );
+    const rootNoteFolders = get().folders.filter(
+      (f) => !isFolderArchived(f) && !f.parentId && !f.isParent,
+    );
+    const childSiblings = parentId
+      ? get().folders.filter((f) => !isFolderArchived(f) && f.parentId === parentId)
+      : [];
     const folder: Folder = migrateFolder({
       id: uuidv4(),
       name,
-      order: activeCount,
+      order: isParent
+        ? parentSections.length
+        : parentId
+          ? childSiblings.length
+          : rootNoteFolders.length,
       calendarColor: 'blue',
       archived: false,
+      isParent,
+      parentId,
     });
     set((s) => ({ folders: [...s.folders, folder] }));
     scheduleSave(get);
+    return folder.id;
   },
 
   renameFolder: (id, name) => {
     set((s) => ({ folders: s.folders.map((f) => (f.id === id ? { ...f, name } : f)) }));
+    scheduleSave(get);
+  },
+
+  setFoldersSectionName: (name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    set({ foldersSectionName: trimmed });
     scheduleSave(get);
   },
 
@@ -348,8 +397,15 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   reorderFolders: (folderIds) => {
+    const anchor = get().folders.find((f) => f.id === folderIds[0]);
+    if (!anchor) return;
+    const isRootScope = !anchor.parentId;
     set((s) => ({
       folders: s.folders.map((f) => {
+        const inScope = isRootScope
+          ? !f.parentId && !f.isParent
+          : f.parentId === anchor.parentId;
+        if (!inScope) return f;
         const order = folderIds.indexOf(f.id);
         return order >= 0 ? { ...f, order } : f;
       }),
@@ -357,23 +413,118 @@ export const useStore = create<Store>((set, get) => ({
     scheduleSave(get);
   },
 
-  deleteFolder: (id) => {
-    if (id === DEFAULT_FOLDER_ID) return;
-    set({
-      folders: get().folders.filter((f) => f.id !== id),
-      notes: get().notes.filter((n) => n.folderId !== id),
-      folderLinks: get().folderLinks.filter((l) => l.folderId !== id),
-      folderSecrets: get().folderSecrets.filter((s) => s.folderId !== id),
-      selectedFolderId:
-        get().selectedFolderId === id ? ALL_NOTES_ID : get().selectedFolderId,
+  moveFolderInTree: (folderId, target) => {
+    const state = get();
+    const folder = state.folders.find((f) => f.id === folderId);
+    if (!folder || folder.isParent || isFolderArchived(folder)) {
+      dndLog('moveFolderInTree → blocked', {
+        folderId,
+        target,
+        reason: !folder
+          ? 'folder not found'
+          : folder.isParent
+            ? 'folder is parent'
+            : 'folder archived',
+      });
+      return;
+    }
+
+    const parentId = target.parentId;
+    if (parentId) {
+      const parent = state.folders.find((f) => f.id === parentId);
+      if (!parent?.isParent || isFolderArchived(parent)) {
+        dndLog('moveFolderInTree → blocked', {
+          folderId,
+          folderName: folder.name,
+          targetParentId: parentId,
+          parentFound: Boolean(parent),
+          parentIsParent: parent?.isParent ?? false,
+          parentArchived: parent ? isFolderArchived(parent) : null,
+          reason: 'invalid parent target',
+        });
+        return;
+      }
+    }
+
+    const sourceParentId = folder.parentId ?? null;
+    const targetIds = state.folders
+      .filter(
+        (f) =>
+          !isFolderArchived(f) &&
+          !f.isParent &&
+          f.id !== folderId &&
+          (f.parentId ?? null) === parentId,
+      )
+      .sort((a, b) => a.order - b.order)
+      .map((f) => f.id);
+
+    if (target.insertBeforeId && targetIds.includes(target.insertBeforeId)) {
+      targetIds.splice(targetIds.indexOf(target.insertBeforeId), 0, folderId);
+    } else {
+      targetIds.push(folderId);
+    }
+
+    const sourceIds =
+      sourceParentId === parentId
+        ? targetIds
+        : state.folders
+            .filter(
+              (f) =>
+                !isFolderArchived(f) &&
+                !f.isParent &&
+                f.id !== folderId &&
+                (f.parentId ?? null) === sourceParentId,
+            )
+            .sort((a, b) => a.order - b.order)
+            .map((f) => f.id);
+
+    dndLog('moveFolderInTree → applying', {
+      folderId,
+      folderName: folder.name,
+      fromParentId: sourceParentId,
+      toParentId: parentId,
+      insertBeforeId: target.insertBeforeId ?? null,
+      targetOrder: targetIds,
     });
+
+    set((s) => ({
+      folders: s.folders.map((f) => {
+        if (f.id === folderId) {
+          return { ...f, parentId, order: targetIds.indexOf(folderId) };
+        }
+        if (f.isParent || isFolderArchived(f)) return f;
+        const scope = f.parentId ?? null;
+        if (scope === parentId) {
+          const order = targetIds.indexOf(f.id);
+          if (order >= 0) return { ...f, order };
+        }
+        if (scope === sourceParentId && sourceParentId !== parentId) {
+          const order = sourceIds.indexOf(f.id);
+          if (order >= 0) return { ...f, order };
+        }
+        return f;
+      }),
+    }));
     scheduleSave(get);
   },
 
-  createNote: (folderId, title = 'Untitled', options) => {
+  deleteFolder: (id) => {
+    set((s) => ({
+      folders: s.folders
+        .filter((f) => f.id !== id)
+        .map((f) => (f.parentId === id ? { ...f, parentId: null } : f)),
+      notes: s.notes.map((n) => (n.folderId === id ? { ...n, folderId: null } : n)),
+      folderLinks: s.folderLinks.filter((l) => l.folderId !== id),
+      folderSecrets: s.folderSecrets.filter((s) => s.folderId !== id),
+      selectedFolderId: s.selectedFolderId === id ? ALL_NOTES_ID : s.selectedFolderId,
+    }));
+    scheduleSave(get);
+  },
+
+  createNote: (folderId = null, title = 'Untitled', options) => {
     const id = uuidv4();
     const now = new Date().toISOString();
-    const folderNotes = get().notes.filter((n) => n.folderId === folderId);
+    const scopedNotes = notesInFolder(get().notes, folderId);
     const note: Note = migrateNote({
       id,
       folderId,
@@ -383,24 +534,24 @@ export const useStore = create<Store>((set, get) => ({
       createdAt: now,
       updatedAt: now,
       isTask: false,
-      order: folderNotes.length,
+      order: scopedNotes.length,
     });
     set((s) => ({
       notes: [...s.notes, note],
       selectedNoteId: options?.keepView ? s.selectedNoteId : id,
-      selectedFolderId: folderId,
+      selectedFolderId: folderId ?? (options?.keepView ? s.selectedFolderId : ALL_NOTES_ID),
       viewMode: options?.keepView ? s.viewMode : 'notes',
     }));
     scheduleSave(get);
     return id;
   },
 
-  createNoteFromImport: (partial, folderId = DEFAULT_FOLDER_ID) => {
+  createNoteFromImport: (partial, folderId = null) => {
     const id = uuidv4();
     const now = new Date().toISOString();
     const note: Note = migrateNote({
       id,
-      folderId,
+      folderId: folderId ?? null,
       title: partial.title ?? 'Imported Note',
       content: partial.content ?? '',
       contentType: partial.contentType ?? 'html',
@@ -408,7 +559,7 @@ export const useStore = create<Store>((set, get) => ({
       createdAt: now,
       updatedAt: now,
       isTask: false,
-      order: get().notes.filter((n) => n.folderId === folderId).length,
+      order: notesInFolder(get().notes, folderId ?? null).length,
     });
     set((s) => ({ notes: [...s.notes, note] }));
     scheduleSave(get);
@@ -438,7 +589,7 @@ export const useStore = create<Store>((set, get) => ({
 
     const newId = uuidv4();
     const now = new Date().toISOString();
-    const folderNotes = get().notes.filter((n) => n.folderId === source.folderId);
+    const folderNotes = notesInFolder(get().notes, source.folderId);
     const copy = migrateNote({
       ...source,
       id: newId,
@@ -453,7 +604,7 @@ export const useStore = create<Store>((set, get) => ({
     set((s) => ({
       notes: [...s.notes, copy],
       selectedNoteId: newId,
-      selectedFolderId: source.folderId,
+      selectedFolderId: source.folderId ?? ALL_NOTES_ID,
       viewMode: 'notes',
     }));
     scheduleSave(get);
@@ -465,7 +616,9 @@ export const useStore = create<Store>((set, get) => ({
     const note = state.notes.find((n) => n.id === noteId);
     if (!note) return;
 
-    const sourceFolder = state.folders.find((f) => f.id === note.folderId);
+    const sourceFolder = note.folderId
+      ? state.folders.find((f) => f.id === note.folderId)
+      : null;
     if (!sourceFolder || isFolderArchived(sourceFolder)) return;
 
     let archiveFolder = state.folders.find(
@@ -508,15 +661,13 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   archiveFolder: (folderId) => {
-    if (folderId === DEFAULT_FOLDER_ID) return;
-
     const state = get();
     const folder = state.folders.find((f) => f.id === folderId);
-    if (!folder || isFolderArchived(folder)) return;
+    if (!folder || isFolderArchived(folder) || folder.isParent) return;
 
     const archiveOrder = state.folders.filter((f) => isFolderArchived(f)).length;
     const folders = state.folders.map((f) =>
-      f.id === folderId ? { ...f, archived: true, order: archiveOrder } : f,
+      f.id === folderId ? { ...f, archived: true, order: archiveOrder, parentId: null } : f,
     );
 
     set({
@@ -601,13 +752,36 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   moveNote: (noteId, folderId) => {
-    const folder = get().folders.find((f) => f.id === folderId);
-    const folderNotes = get().notes.filter((n) => n.folderId === folderId);
+    const note = get().notes.find((n) => n.id === noteId);
+    if (folderId) {
+      const folder = get().folders.find((f) => f.id === folderId);
+      if (!folder || isFolderArchived(folder) || folder.isParent) {
+        dndLog('moveNote → blocked', {
+          noteId,
+          noteTitle: note?.title ?? '?',
+          targetFolderId: folderId,
+          folderFound: Boolean(folder),
+          folderName: folder?.name ?? null,
+          folderIsParent: folder?.isParent ?? null,
+          folderArchived: folder ? isFolderArchived(folder) : null,
+        });
+        return;
+      }
+    }
+    const folderNotes = notesInFolder(get().notes, folderId);
+    dndLog('moveNote → applying', {
+      noteId,
+      noteTitle: note?.title ?? '?',
+      fromFolderId: note?.folderId ?? null,
+      toFolderId: folderId,
+      toFolderName: folderId ? get().folders.find((f) => f.id === folderId)?.name ?? '?' : null,
+    });
     set((s) => ({
       notes: s.notes.map((n) => {
         if (n.id !== noteId) return n;
         const updates: Partial<typeof n> = { folderId, order: folderNotes.length };
-        if (n.scheduledAt) {
+        if (n.scheduledAt && folderId) {
+          const folder = s.folders.find((f) => f.id === folderId);
           updates.calendarColor = folder?.calendarColor ?? 'blue';
         }
         return { ...n, ...updates };
@@ -619,7 +793,8 @@ export const useStore = create<Store>((set, get) => ({
   reorderNotes: (folderId, noteIds) => {
     set((s) => ({
       notes: s.notes.map((n) => {
-        if (n.folderId !== folderId) return n;
+        const inScope = folderId ? n.folderId === folderId : !n.folderId;
+        if (!inScope) return n;
         const order = noteIds.indexOf(n.id);
         return order >= 0 ? { ...n, order } : n;
       }),
@@ -807,10 +982,16 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   getDisplayedNotes: () => {
-    const { notes, selectedFolderId } = get();
+    const { notes, selectedFolderId, folders } = get();
     let filtered = notes;
     if (selectedFolderId && selectedFolderId !== ALL_NOTES_ID) {
       filtered = filtered.filter((n) => n.folderId === selectedFolderId);
+    } else if (selectedFolderId === ALL_NOTES_ID) {
+      filtered = filtered.filter((n) => {
+        if (!n.folderId) return true;
+        const folder = folders.find((f) => f.id === n.folderId);
+        return !isFolderArchived(folder);
+      });
     }
     return filtered.sort((a, b) => {
       if (selectedFolderId === ALL_NOTES_ID) {
@@ -821,9 +1002,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   getNotesByFolder: (folderId) =>
-    get()
-      .notes.filter((n) => n.folderId === folderId)
-      .sort((a, b) => a.order - b.order),
+    notesInFolder(get().notes, folderId).sort((a, b) => a.order - b.order),
 
   getPinnedNotes: () =>
     get()
@@ -851,4 +1030,4 @@ export const useStore = create<Store>((set, get) => ({
   },
 }));
 
-export { ALL_NOTES_ID, DEFAULT_FOLDER_ID };
+export { ALL_NOTES_ID };

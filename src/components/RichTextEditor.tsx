@@ -155,7 +155,10 @@ export function RichTextEditor({
     ],
     content,
     editorProps: {
-      attributes: { class: 'prose-editor focus:outline-none min-h-[300px] px-1' },
+      attributes: {
+        class: 'prose-editor focus:outline-none min-h-[300px] px-1',
+        spellcheck: 'true',
+      },
       handleDrop: (view, event, _slice, moved) => {
         // Internal drags (e.g. repositioning an image) must not create new attachments.
         if (moved) return false;
