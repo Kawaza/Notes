@@ -33,7 +33,7 @@ interface Store extends AppData {
   clearFolderDialogRequest: () => void;
   syncStatus: SyncStatus;
   syncError: string | null;
-  hydrate: (userId?: string | null) => Promise<void>;
+  hydrate: (userId?: string | null, generation?: number) => Promise<void>;
   rehydrate: (userId: string | null) => Promise<void>;
   startCloudSync: (userId: string) => void;
   stopCloudSync: () => void;
