@@ -66,6 +66,7 @@ async function writePaddedWhiteIcon(source, outPath, size, logoScale = 0.58) {
     },
   })
     .composite([{ input: logo, left: offset, top: offset }])
+    .flatten({ background: { r: 255, g: 255, b: 255 } })
     .png()
     .toFile(outPath);
 }
