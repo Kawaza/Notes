@@ -49,11 +49,19 @@ async function writeIcon(source, outPath, size) {
 }
 
 /** White background + centered logo with padding (home screen / PWA). */
-async function writePaddedWhiteIcon(source, outPath, size, logoScale = 0.58) {
+async function writePaddedWhiteIcon(source, outPath, size, logoScale = 0.4) {
   const logoSize = Math.round(size * logoScale);
   const offset = Math.round((size - logoSize) / 2);
+  // Rasterize large, threshold to pure black/white (avoids grey fringe that iOS reads as a gradient).
   const logo = await sharp(source)
-    .resize(logoSize, logoSize, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .resize(logoSize * 4, logoSize * 4, {
+      fit: 'contain',
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    })
+    .flatten({ background: { r: 255, g: 255, b: 255 } })
+    .greyscale()
+    .threshold(235)
+    .resize(logoSize, logoSize, { kernel: sharp.kernel.nearest })
     .png()
     .toBuffer();
 
@@ -61,13 +69,12 @@ async function writePaddedWhiteIcon(source, outPath, size, logoScale = 0.58) {
     create: {
       width: size,
       height: size,
-      channels: 4,
-      background: { r: 255, g: 255, b: 255, alpha: 1 },
+      channels: 3,
+      background: { r: 255, g: 255, b: 255 },
     },
   })
     .composite([{ input: logo, left: offset, top: offset }])
-    .flatten({ background: { r: 255, g: 255, b: 255 } })
-    .png()
+    .png({ compressionLevel: 9, palette: false })
     .toFile(outPath);
 }
 
@@ -104,6 +111,7 @@ for (const size of [180, 192, 512]) {
   const name = size === 180 ? 'apple-touch-icon.png' : `pwa-icon-${size}.png`;
   await writePaddedWhiteIcon(lightSource, path.join(publicDir, name), size);
 }
+await writePaddedWhiteIcon(lightSource, path.join(publicDir, 'apple-touch-icon-512.png'), 512);
 
 /** Keep source padding; use transparent background so uneven margins don't become black lines. */
 async function renderDesktopIcon(size) {
