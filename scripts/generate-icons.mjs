@@ -34,7 +34,7 @@ fs.mkdirSync(iconsDir, { recursive: true });
 fs.mkdirSync(buildDir, { recursive: true });
 
 async function prepareSource(invert = false) {
-  let pipeline = sharp(logoSvg, { density: 300 }).trim({ threshold: 12 });
+  let pipeline = sharp(logoSvg, { density: 400 }).trim({ threshold: 12 });
   if (invert) {
     pipeline = pipeline.negate({ alpha: false });
   }
@@ -49,25 +49,23 @@ async function writeIcon(source, outPath, size) {
 }
 
 const HOME_SCREEN_BG = { r: 255, g: 255, b: 255 };
+const MASTER_ICON_SIZE = 1024;
 
-/** Square, fully opaque home-screen icon (no alpha — iOS adds gloss if any transparency exists). */
-async function writeOpaqueHomeScreenIcon(source, outPath, size, logoScale = 0.4) {
+/** Render one high-res master, then downscale — sharper on iOS home screen than tiny direct exports. */
+async function renderOpaqueIconMaster(source, size = MASTER_ICON_SIZE, logoScale = 0.4) {
   const logoSize = Math.round(size * logoScale);
   const offset = Math.round((size - logoSize) / 2);
   const logo = await sharp(source)
-    .resize(logoSize * 4, logoSize * 4, {
+    .resize(logoSize, logoSize, {
       fit: 'contain',
       background: { ...HOME_SCREEN_BG, alpha: 1 },
+      kernel: sharp.kernel.lanczos3,
     })
-    .flatten({ background: HOME_SCREEN_BG })
-    .greyscale()
-    .threshold(235)
-    .resize(logoSize, logoSize, { kernel: sharp.kernel.nearest })
     .flatten({ background: HOME_SCREEN_BG })
     .removeAlpha()
     .toBuffer();
 
-  await sharp({
+  return sharp({
     create: {
       width: size,
       height: size,
@@ -77,6 +75,14 @@ async function writeOpaqueHomeScreenIcon(source, outPath, size, logoScale = 0.4)
   })
     .composite([{ input: logo, left: offset, top: offset }])
     .flatten({ background: HOME_SCREEN_BG })
+    .removeAlpha()
+    .png()
+    .toBuffer();
+}
+
+async function writeOpaqueIconFromMaster(master, outPath, size) {
+  await sharp(master)
+    .resize(size, size, { kernel: sharp.kernel.lanczos3 })
     .removeAlpha()
     .png({ compressionLevel: 9, palette: false })
     .toFile(outPath);
@@ -119,15 +125,25 @@ await writeIcon(lightSource, path.join(publicDir, 'favicon.png'), 512);
 await writeIcon(darkSource, path.join(publicDir, 'favicon-dark.png'), 512);
 await writeIcon(lightSource, path.join(publicDir, 'logo-icon.png'), 512);
 
-// iOS home screen — exact square sizes, fully opaque RGB PNGs (iOS applies its own mask).
-for (const size of [180, 152, 167]) {
-  const name = size === 180 ? 'apple-touch-icon.png' : `apple-touch-icon-${size}.png`;
-  await writeOpaqueHomeScreenIcon(lightSource, path.join(publicDir, name), size);
+// One 1024px master → all sizes (installed web app uses manifest icon, not apple-touch preview).
+const iconMaster = await renderOpaqueIconMaster(lightSource, MASTER_ICON_SIZE);
+
+const homeScreenSizes = [
+  { size: 1024, name: 'apple-touch-icon-1024.png' },
+  { size: 512, name: 'apple-touch-icon-512.png' },
+  { size: 180, name: 'apple-touch-icon.png' },
+  { size: 167, name: 'apple-touch-icon-167.png' },
+  { size: 152, name: 'apple-touch-icon-152.png' },
+  { size: 120, name: 'apple-touch-icon-120.png' },
+];
+
+for (const { size, name } of homeScreenSizes) {
+  await writeOpaqueIconFromMaster(iconMaster, path.join(publicDir, name), size);
 }
 
-for (const size of [192, 512]) {
-  await writeOpaqueHomeScreenIcon(lightSource, path.join(publicDir, `pwa-icon-${size}.png`), size);
-}
+// Manifest icons for "Open as Web App" — use same high-res assets (not 192px).
+await writeOpaqueIconFromMaster(iconMaster, path.join(publicDir, 'pwa-icon-512.png'), 512);
+await writeOpaqueIconFromMaster(iconMaster, path.join(publicDir, 'pwa-icon-1024.png'), 1024);
 
 /** Keep source padding; use transparent background so uneven margins don't become black lines. */
 async function renderDesktopIcon(size) {
