@@ -15,7 +15,7 @@ export function TagInput({ noteId, tags }: { noteId: string; tags: string[] }) {
   };
 
   return (
-    <div className="border-t border-border px-8 py-3">
+    <div className="border-t border-border px-4 md:px-8 py-3">
       <div className="flex items-center gap-2 flex-wrap">
         <Tag size={14} className="text-muted-foreground shrink-0" />
         {tags.map((tag) => (

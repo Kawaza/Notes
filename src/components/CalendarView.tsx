@@ -15,8 +15,10 @@ import { ContextMenu } from './ContextMenu';
 import { ConfirmDialog } from './ConfirmDialog';
 import { AddTasksPanel } from './AddTasksPanel';
 import { MobileNavButton } from './MobileNavButton';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
+  const isMobile = useIsMobile();
   const notes = useStore((s) => s.notes);
   const folders = useStore((s) => s.folders);
   const theme = useStore((s) => s.theme);
@@ -187,16 +189,24 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
 
         <AddTasksPanel open={showAddTasks} onClose={() => setShowAddTasks(false)} />
 
-        <div ref={calendarContainerRef} className="flex-1 p-2 md:p-4 calendar-container overflow-auto min-h-0">
+        <div ref={calendarContainerRef} className="flex-1 p-1 md:p-4 calendar-container overflow-auto min-h-0">
           <FullCalendar
             ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
-            initialView="timeGridWeek"
-            headerToolbar={{
-              left: 'prev,next today',
-              center: 'title',
-              right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek',
-            }}
+            initialView={isMobile ? 'listWeek' : 'timeGridWeek'}
+            headerToolbar={
+              isMobile
+                ? {
+                    left: 'prev,next',
+                    center: 'title',
+                    right: 'today,listWeek,dayGridMonth',
+                  }
+                : {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek',
+                  }
+            }
             events={events}
             editable
             droppable

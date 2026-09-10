@@ -1,5 +1,6 @@
-import { useCallback, useRef } from 'react';
-import { Trash2, Pin, FileCode2, Maximize2, X, File, Download, Copy, Archive, ChevronLeft } from 'lucide-react';
+import { useCallback, useRef, useState } from 'react';
+import { Trash2, Pin, FileCode2, Maximize2, X, File, Download, Copy, Archive, ChevronLeft, MoreVertical } from 'lucide-react';
+import { OverflowMenu } from './OverflowMenu';
 import { useStore } from '../store/useStore';
 import { TaskSchedulePanel } from './TaskSchedulePanel';
 import { TagInput } from './TagInput';
@@ -51,6 +52,8 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
   const folders = useStore((s) => s.folders);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const richEditorRef = useRef<TiptapEditor | null>(null);
+  const mobileOverflowRef = useRef<HTMLButtonElement>(null);
+  const [mobileOverflowOpen, setMobileOverflowOpen] = useState(false);
 
   const note = notes.find((n) => n.id === activeNoteId);
   const folder = note ? folders.find((f) => f.id === note.folderId) : null;
@@ -170,102 +173,172 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
   }
 
   const padding = compact ? 'px-4' : onMobileBack ? 'px-4 md:px-8' : 'px-8';
+  const isMobileEditor = Boolean(onMobileBack && !compact);
+
+  const mobileOverflowItems = [
+    {
+      label: note.pinned ? 'Unpin note' : 'Pin note',
+      icon: <Pin size={14} />,
+      onClick: () => togglePinNote(note.id),
+    },
+    {
+      label: 'Duplicate note',
+      icon: <Copy size={14} />,
+      onClick: () => duplicateNote(note.id),
+    },
+    ...(canArchive
+      ? [
+          {
+            label: 'Archive note',
+            icon: <Archive size={14} />,
+            onClick: () => archiveNote(note.id),
+          },
+        ]
+      : []),
+    {
+      label: isMarkdown ? 'Switch to rich text' : 'Switch to markdown',
+      icon: <FileCode2 size={14} />,
+      onClick: () => toggleNoteEditorMode(note.id),
+    },
+    {
+      label: 'Delete note',
+      icon: <Trash2 size={14} />,
+      danger: true,
+      onClick: () => {
+        deleteNote(note.id);
+        onClose?.();
+        onMobileBack?.();
+      },
+    },
+  ];
 
   return (
     <div className={`flex flex-col bg-background h-full overflow-hidden ${compact ? '' : 'flex-1'}`}>
-      <div className={`flex items-center justify-between ${padding} pt-4 pb-2 border-b border-border/50 gap-2`}>
-        <div className="flex items-center gap-1 min-w-0 flex-1">
-          {onMobileBack && (
+      {isMobileEditor ? (
+        <div className="shrink-0 border-b border-border">
+          <div className="flex items-start gap-1 px-3 py-2.5">
             <button
               type="button"
               onClick={onMobileBack}
-              className="md:hidden p-2 -ml-1 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer shrink-0"
+              className="p-2 -ml-1 mt-0.5 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer shrink-0"
               aria-label="Back to notes"
             >
               <ChevronLeft size={20} />
             </button>
-          )}
-          <div className="flex-1 min-w-0">
-            {!compact && folder && <p className="text-xs text-muted-foreground mb-1">{folder.name}</p>}
-            <input
-              value={note.title}
-              onChange={(e) => handleTitleChange(e.target.value)}
-              placeholder="Untitled"
-              className={`w-full font-bold bg-transparent outline-none placeholder:text-muted-foreground/40 ${
-                compact ? 'text-lg' : 'text-xl md:text-2xl'
-              }`}
-            />
+            <div className="flex-1 min-w-0 pt-0.5">
+              {folder && (
+                <p className="text-[11px] text-muted-foreground truncate mb-0.5">{folder.name}</p>
+              )}
+              <input
+                value={note.title}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                placeholder="Untitled"
+                className="w-full text-base font-semibold bg-transparent outline-none placeholder:text-muted-foreground/40"
+              />
+            </div>
+            <button
+              ref={mobileOverflowRef}
+              type="button"
+              onClick={() => setMobileOverflowOpen((v) => !v)}
+              className="p-2 mt-0.5 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer shrink-0"
+              aria-label="Note options"
+            >
+              <MoreVertical size={18} />
+            </button>
+            {mobileOverflowOpen && (
+              <OverflowMenu
+                anchorRef={mobileOverflowRef}
+                items={mobileOverflowItems}
+                onClose={() => setMobileOverflowOpen(false)}
+              />
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-1 shrink-0 ml-2">
-          {compact && onExpand && (
-            <button
-              onClick={onExpand}
-              className="p-2 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
-              title="Expand to full editor"
-            >
-              <Maximize2 size={16} />
-            </button>
-          )}
-          {compact && onClose && (
-            <button
-              onClick={onClose}
-              className="p-2 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
-              title="Close"
-            >
-              <X size={16} />
-            </button>
-          )}
-          {!compact && (
-            <>
-              <button
-                onClick={() => togglePinNote(note.id)}
-                className={`p-2 rounded-md transition-colors cursor-pointer ${
-                  note.pinned ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:bg-muted'
+      ) : (
+        <div className={`flex items-center justify-between ${padding} pt-4 pb-2 border-b border-border/50 gap-2`}>
+          <div className="flex items-center gap-1 min-w-0 flex-1">
+            <div className="flex-1 min-w-0">
+              {!compact && folder && <p className="text-xs text-muted-foreground mb-1">{folder.name}</p>}
+              <input
+                value={note.title}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                placeholder="Untitled"
+                className={`w-full font-bold bg-transparent outline-none placeholder:text-muted-foreground/40 ${
+                  compact ? 'text-lg' : 'text-xl md:text-2xl'
                 }`}
-                title={note.pinned ? 'Unpin' : 'Pin note'}
-              >
-                <Pin size={16} />
-              </button>
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-1 shrink-0 ml-2">
+            {compact && onExpand && (
               <button
-                onClick={() => duplicateNote(note.id)}
+                onClick={onExpand}
                 className="p-2 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
-                title="Duplicate note"
+                title="Expand to full editor"
               >
-                <Copy size={16} />
+                <Maximize2 size={16} />
               </button>
-              {canArchive && (
-                <button
-                  onClick={() => archiveNote(note.id)}
-                  className="p-2 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
-                  title="Archive note"
-                >
-                  <Archive size={16} />
-                </button>
-              )}
+            )}
+            {compact && onClose && (
               <button
-                onClick={() => toggleNoteEditorMode(note.id)}
-                className={`px-2.5 py-1.5 rounded-md text-xs font-mono font-medium transition-colors cursor-pointer ${
-                  isMarkdown ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted'
-                }`}
-                title="Toggle markdown mode"
+                onClick={onClose}
+                className="p-2 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
+                title="Close"
               >
-                MD
+                <X size={16} />
               </button>
-            </>
-          )}
-          <button
-            onClick={() => {
-              deleteNote(note.id);
-              onClose?.();
-            }}
-            className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
-            title="Delete note"
-          >
-            <Trash2 size={16} />
-          </button>
+            )}
+            {!compact && (
+              <>
+                <button
+                  onClick={() => togglePinNote(note.id)}
+                  className={`p-2 rounded-md transition-colors cursor-pointer ${
+                    note.pinned ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:bg-muted'
+                  }`}
+                  title={note.pinned ? 'Unpin' : 'Pin note'}
+                >
+                  <Pin size={16} />
+                </button>
+                <button
+                  onClick={() => duplicateNote(note.id)}
+                  className="p-2 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
+                  title="Duplicate note"
+                >
+                  <Copy size={16} />
+                </button>
+                {canArchive && (
+                  <button
+                    onClick={() => archiveNote(note.id)}
+                    className="p-2 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
+                    title="Archive note"
+                  >
+                    <Archive size={16} />
+                  </button>
+                )}
+                <button
+                  onClick={() => toggleNoteEditorMode(note.id)}
+                  className={`px-2.5 py-1.5 rounded-md text-xs font-mono font-medium transition-colors cursor-pointer ${
+                    isMarkdown ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted'
+                  }`}
+                  title="Toggle markdown mode"
+                >
+                  MD
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => {
+                deleteNote(note.id);
+                onClose?.();
+              }}
+              className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+              title="Delete note"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {isMarkdown && !compact && (
         <div className={`flex items-center gap-2 ${padding} py-2 border-b border-border/30 text-xs text-muted-foreground`}>
@@ -275,7 +348,7 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
       )}
 
       <div
-        className={`flex-1 overflow-y-auto ${padding} py-3 flex flex-col min-h-0`}
+        className={`flex-1 overflow-y-auto ${padding} py-2 md:py-3 flex flex-col min-h-0`}
         onDragOver={(e) => {
           if (isMarkdown) e.preventDefault();
         }}

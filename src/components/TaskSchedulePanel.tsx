@@ -64,7 +64,7 @@ export function TaskSchedulePanel({
     ? format(new Date(note.scheduledEnd), 'HH:mm')
     : '10:00';
 
-  const pad = compact ? 'px-4' : 'px-8';
+  const pad = compact ? 'px-4' : 'px-4 md:px-8';
   const inputClass =
     'px-1.5 py-1 text-xs rounded-md bg-background border border-border outline-none focus:ring-1 focus:ring-primary/40 min-w-0';
 
@@ -85,45 +85,51 @@ export function TaskSchedulePanel({
   return (
     <div className={`border-t border-border ${pad} py-2 bg-muted/30 shrink-0`}>
       {note.scheduledAt && !editing ? (
-        <div className="flex items-center gap-2">
-          <CalendarClock size={14} className="text-primary shrink-0" />
-          <button
-            onClick={() => setEditing(true)}
-            className="flex-1 text-left text-sm hover:text-primary transition-colors cursor-pointer truncate min-w-0"
-            title="Click to change schedule"
-          >
-            {formatScheduleDisplay(note)}
-          </button>
-          {folderSelect}
-          <button
-            onClick={clearSchedule}
-            className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
-            title="Remove from calendar"
-          >
-            <X size={15} />
-          </button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <CalendarClock size={14} className="text-primary shrink-0" />
+            <button
+              onClick={() => setEditing(true)}
+              className="flex-1 text-left text-sm hover:text-primary transition-colors cursor-pointer min-w-0"
+              title="Click to change schedule"
+            >
+              {formatScheduleDisplay(note)}
+            </button>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {folderSelect}
+            <button
+              onClick={clearSchedule}
+              className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
+              title="Remove from calendar"
+            >
+              <X size={15} />
+            </button>
+          </div>
         </div>
       ) : editing ? (
-        <>
-          <div className="flex items-center gap-1.5">
+        <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <input
               type="date"
               value={dateValue}
               onChange={(e) => handleSchedule(e.target.value, timeValue, endTimeValue)}
-              className={`${inputClass} flex-[1.3]`}
+              className={inputClass}
             />
             <input
               type="time"
               value={timeValue}
               onChange={(e) => handleSchedule(dateValue, e.target.value, endTimeValue)}
-              className={`${inputClass} flex-1`}
+              className={inputClass}
             />
             <input
               type="time"
               value={endTimeValue}
               onChange={(e) => handleSchedule(dateValue, timeValue, e.target.value)}
-              className={`${inputClass} flex-1`}
+              className={inputClass}
             />
+          </div>
+          <div className="flex items-center gap-2">
             {folderSelect}
             <button
               onClick={closeEditing}
@@ -133,7 +139,7 @@ export function TaskSchedulePanel({
               <X size={15} />
             </button>
           </div>
-        </>
+        </div>
       ) : null}
     </div>
   );

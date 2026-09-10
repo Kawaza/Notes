@@ -261,7 +261,7 @@ export function RichTextEditor({
     editor.chain().focus().toggleTaskList().run();
   };
 
-  const toolbarPad = compact ? '-mx-4 px-4' : '-mx-8 px-8';
+  const toolbarPad = compact ? '-mx-4 px-4' : '-mx-4 px-4 md:-mx-8 md:px-8';
 
   return (
     <>
@@ -273,7 +273,7 @@ export function RichTextEditor({
       />
 
       {editor && (
-        <div className={`flex items-center gap-0.5 ${toolbarPad} py-2 border-b border-border/30 flex-wrap mb-4`}>
+        <div className={`flex items-center gap-0.5 ${toolbarPad} py-2 border-b border-border/30 mb-4 max-md:overflow-x-auto max-md:flex-nowrap md:flex-wrap`}>
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBold().run()}
             active={editor.isActive('bold')}

@@ -461,7 +461,7 @@ export function FolderOverview({ folderId, onMobileBack }: FolderOverviewProps) 
   if (!folder) return null;
 
   return (
-    <div className="flex flex-col flex-1 h-full overflow-hidden bg-background">
+    <div className="flex flex-col flex-1 h-full overflow-hidden bg-background w-full">
       <QuickLinkDialog
         open={linkDialogOpen}
         onClose={() => {
@@ -496,19 +496,22 @@ export function FolderOverview({ folderId, onMobileBack }: FolderOverviewProps) 
         mode={editingSecret ? 'edit' : 'create'}
       />
 
+      {onMobileBack && (
+        <div className="md:hidden flex items-center px-3 py-3.5 border-b border-border shrink-0">
+          <button
+            type="button"
+            onClick={onMobileBack}
+            className="flex items-center gap-1 text-sm font-medium text-foreground cursor-pointer"
+          >
+            <ChevronLeft size={18} />
+            Back to notes
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto">
         <div className="w-full px-4 md:px-8 py-6 md:py-8">
           <div className="mb-8">
-            {onMobileBack && (
-              <button
-                type="button"
-                onClick={onMobileBack}
-                className="md:hidden flex items-center gap-1 mb-3 text-sm text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                <ChevronLeft size={18} />
-                Back to notes
-              </button>
-            )}
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Folder</p>
             <h1 className="text-2xl font-bold">{folder.name}</h1>
             <p className="text-sm text-muted-foreground mt-1">
