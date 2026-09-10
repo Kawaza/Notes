@@ -17,7 +17,7 @@ export function AuthScreen() {
 
   if (!isSupabaseConfigured()) {
     return (
-      <div className="min-h-[100dvh] flex items-center justify-center p-6 bg-background">
+      <div className="min-h-[100dvh] flex items-center justify-center bg-background mobile-page-padding">
         <div className="w-full max-w-md text-center space-y-4">
           <div className="flex justify-center"><NotesLogo /></div>
           <h1 className="text-xl font-semibold">Cloud sync not configured</h1>
@@ -45,7 +45,7 @@ export function AuthScreen() {
   };
 
   return (
-    <div className="min-h-[100dvh] flex items-center justify-center p-6 bg-background safe-area-padding">
+    <div className="min-h-[100dvh] flex items-center justify-center bg-background mobile-page-padding">
       <div className="w-full max-w-md space-y-8">
         <div className="text-center space-y-3">
           <div className="flex justify-center"><NotesLogo /></div>

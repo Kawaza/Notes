@@ -48,6 +48,28 @@ async function writeIcon(source, outPath, size) {
     .toFile(outPath);
 }
 
+/** White background + centered logo with padding (home screen / PWA). */
+async function writePaddedWhiteIcon(source, outPath, size, logoScale = 0.58) {
+  const logoSize = Math.round(size * logoScale);
+  const offset = Math.round((size - logoSize) / 2);
+  const logo = await sharp(source)
+    .resize(logoSize, logoSize, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer();
+
+  await sharp({
+    create: {
+      width: size,
+      height: size,
+      channels: 4,
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    },
+  })
+    .composite([{ input: logo, left: offset, top: offset }])
+    .png()
+    .toFile(outPath);
+}
+
 const lightSource = await prepareSource(false);
 const darkSource = await prepareSource(true);
 
@@ -76,6 +98,11 @@ fs.writeFileSync(path.join(buildDir, 'icon.ico'), await toIco(taskbarIcoSizes));
 await writeIcon(lightSource, path.join(publicDir, 'favicon.png'), 512);
 await writeIcon(darkSource, path.join(publicDir, 'favicon-dark.png'), 512);
 await writeIcon(lightSource, path.join(publicDir, 'logo-icon.png'), 512);
+
+for (const size of [180, 192, 512]) {
+  const name = size === 180 ? 'apple-touch-icon.png' : `pwa-icon-${size}.png`;
+  await writePaddedWhiteIcon(lightSource, path.join(publicDir, name), size);
+}
 
 /** Keep source padding; use transparent background so uneven margins don't become black lines. */
 async function renderDesktopIcon(size) {
