@@ -48,20 +48,26 @@ async function writeIcon(source, outPath, size) {
     .toFile(outPath);
 }
 
-const HOME_SCREEN_BG = { r: 255, g: 255, b: 255 };
+// TikTok-style app icon: pure black tile + white logo.
+const HOME_SCREEN_BG = { r: 0, g: 0, b: 0 };
 const MASTER_ICON_SIZE = 1024;
 
 /** Render one high-res master, then downscale — sharper on iOS home screen than tiny direct exports. */
-async function renderOpaqueIconMaster(source, size = MASTER_ICON_SIZE, logoScale = 0.4) {
+async function renderOpaqueIconMaster(
+  source,
+  size = MASTER_ICON_SIZE,
+  logoScale = 0.4,
+  bg = HOME_SCREEN_BG,
+) {
   const logoSize = Math.round(size * logoScale);
   const offset = Math.round((size - logoSize) / 2);
   const logo = await sharp(source)
     .resize(logoSize, logoSize, {
       fit: 'contain',
-      background: { ...HOME_SCREEN_BG, alpha: 1 },
+      background: { ...bg, alpha: 1 },
       kernel: sharp.kernel.lanczos3,
     })
-    .flatten({ background: HOME_SCREEN_BG })
+    .flatten({ background: bg })
     .removeAlpha()
     .toBuffer();
 
@@ -70,11 +76,11 @@ async function renderOpaqueIconMaster(source, size = MASTER_ICON_SIZE, logoScale
       width: size,
       height: size,
       channels: 3,
-      background: HOME_SCREEN_BG,
+      background: bg,
     },
   })
     .composite([{ input: logo, left: offset, top: offset }])
-    .flatten({ background: HOME_SCREEN_BG })
+    .flatten({ background: bg })
     .removeAlpha()
     .png()
     .toBuffer();
@@ -125,8 +131,8 @@ await writeIcon(lightSource, path.join(publicDir, 'favicon.png'), 512);
 await writeIcon(darkSource, path.join(publicDir, 'favicon-dark.png'), 512);
 await writeIcon(lightSource, path.join(publicDir, 'logo-icon.png'), 512);
 
-// One 1024px master → all sizes (installed web app uses manifest icon, not apple-touch preview).
-const iconMaster = await renderOpaqueIconMaster(lightSource, MASTER_ICON_SIZE);
+// One 1024px master → all sizes (white logo on black, like TikTok-style tiles).
+const iconMaster = await renderOpaqueIconMaster(darkSource, MASTER_ICON_SIZE);
 
 const homeScreenSizes = [
   { size: 1024, name: 'apple-touch-icon-1024.png' },
