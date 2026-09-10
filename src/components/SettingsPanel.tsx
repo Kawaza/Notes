@@ -12,6 +12,7 @@ import {
 import type { ColorPalette } from '../types';
 import type { UpdateUiState } from '../hooks/useAppUpdater';
 import { UpdateSettingsSection } from './UpdateUI';
+import { SyncAccountSection } from './SyncAccountSection';
 
 type SettingsPanelProps = {
   updateState: UpdateUiState;
@@ -97,7 +98,7 @@ export function SettingsPanel({
       onClick={() => setSettingsOpen(false)}
     >
       <div
-        className="w-full max-w-md mx-4 rounded-xl border border-border bg-background shadow-2xl overflow-hidden"
+        className="w-full max-w-md mx-4 max-h-[90dvh] rounded-xl border border-border bg-background shadow-2xl overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
@@ -111,6 +112,8 @@ export function SettingsPanel({
         </div>
 
         <div className="p-5 space-y-6 max-h-[70vh] overflow-y-auto">
+          <SyncAccountSection />
+
           <section>
             <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
               <Palette size={14} /> Appearance

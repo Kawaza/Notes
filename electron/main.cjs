@@ -248,6 +248,19 @@ ipcMain.handle('load-data', () => {
   }
 });
 
+ipcMain.handle('load-data-backup', () => {
+  try {
+    const backupPath = getBackupPath();
+    if (fs.existsSync(backupPath)) {
+      return JSON.parse(fs.readFileSync(backupPath, 'utf-8'));
+    }
+    return null;
+  } catch (err) {
+    console.error('Failed to load notes backup:', err);
+    return null;
+  }
+});
+
 ipcMain.handle('save-data', (_event, data) => {
   try {
     return saveDataToDisk(data);

@@ -12,6 +12,10 @@ dist
 dist-ssr
 release
 *.local
+notes-data*.json
+.env
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/*

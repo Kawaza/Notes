@@ -4,6 +4,10 @@ import type { AppData, Folder, FolderLink, FolderSecret, Note, NoteAttachment, T
 import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, DEFAULT_FOLDERS_SECTION_NAME, isFolderArchived, notesInFolder } from '../types';
 import { htmlToMarkdown, markdownToHtml } from '../utils/markdown';
 import { dndLog } from '../utils/dndDebug';
+import { isSyncAvailable, pullCloudData, pushCloudData, subscribeCloudChanges } from '../sync/cloudSync';
+import { emptySyncPayload, mergeSyncPayloads } from '../sync/mergeSync';
+import type { SyncPayload, SyncStatus } from '../sync/types';
+import { useAuthStore } from './authStore';
 
 const defaultData: AppData = {
   folders: [],
@@ -27,9 +31,16 @@ interface Store extends AppData {
   folderDialogRequest: 'secret' | 'link' | null;
   requestFolderDialog: (type: 'secret' | 'link') => void;
   clearFolderDialogRequest: () => void;
-  hydrate: () => Promise<void>;
+  syncStatus: SyncStatus;
+  syncError: string | null;
+  hydrate: (userId?: string | null) => Promise<void>;
+  rehydrate: (userId: string | null) => Promise<void>;
+  startCloudSync: (userId: string) => void;
+  stopCloudSync: () => void;
   persist: () => Promise<void>;
+  persistLocal: () => Promise<void>;
   flushPersist: () => Promise<void>;
+  mergeAndUploadDeviceNotes: () => Promise<{ notes: number; folders: number }>;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
   setColorPalette: (palette: ColorPalette) => void;
@@ -113,7 +124,76 @@ function getPersistableData(state: Store): AppData {
 
 let hydrateStarted = false;
 
+/** Ignore stale hydrate/rehydrate results when auth changes mid-load. */
+let hydrateGeneration = 0;
+
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+let skipCloudPush = false;
+
+let lastCloudPushAt = 0;
+
+let unsubscribeCloud: (() => void) | null = null;
+
+function getSyncPayload(state: Store): SyncPayload {
+  return {
+    folders: state.folders,
+    notes: state.notes,
+    folderLinks: state.folderLinks,
+    folderSecrets: state.folderSecrets,
+    theme: state.theme,
+    colorPalette: state.colorPalette,
+    foldersSectionName: state.foldersSectionName,
+  };
+}
+
+function hasSyncContent(payload: SyncPayload): boolean {
+  return (
+    payload.notes.length > 0 ||
+    payload.folders.length > 0 ||
+    payload.folderLinks.length > 0 ||
+    payload.folderSecrets.length > 0
+  );
+}
+
+async function loadLocalRaw(): Promise<AppData | null> {
+  if (window.electronAPI?.isElectron) {
+    return window.electronAPI.loadData();
+  }
+  const stored = localStorage.getItem('notes-app-data');
+  if (!stored) return null;
+  return JSON.parse(stored) as AppData;
+}
+
+/** Desktop file + .bak backup merged (backup often has pre-sync notes). */
+async function loadDeviceRawForUpload(): Promise<AppData | null> {
+  const current = await loadLocalRaw();
+  const backup =
+    window.electronAPI?.loadDataBackup != null
+      ? await window.electronAPI.loadDataBackup()
+      : null;
+
+  if (!current && !backup) return null;
+  if (!backup) return current;
+  if (!current) return backup;
+
+  const merged = mergeSyncPayloads(
+    getSyncPayload(migrateData(backup) as Store),
+    getSyncPayload(migrateData(current) as Store),
+  );
+  return { ...current, ...merged };
+}
+
+async function saveLocalRaw(data: AppData): Promise<void> {
+  if (window.electronAPI?.isElectron) {
+    const ok = window.electronAPI.saveDataSync
+      ? window.electronAPI.saveDataSync(data)
+      : await window.electronAPI.saveData(data);
+    if (!ok) console.error('Failed to save notes to disk');
+    return;
+  }
+  localStorage.setItem('notes-app-data', JSON.stringify(data));
+}
 
 function scheduleSave(getState: () => Store) {
   if (saveTimeout) clearTimeout(saveTimeout);
@@ -209,22 +289,126 @@ export const useStore = create<Store>((set, get) => ({
   settingsOpen: false,
   mobileNavOpen: false,
   folderDialogRequest: null,
+  syncStatus: 'offline',
+  syncError: null,
 
-  hydrate: async () => {
+  rehydrate: async (userId) => {
+    const generation = ++hydrateGeneration;
+    hydrateStarted = false;
+    set({
+      hydrated: false,
+      syncStatus: userId && isSyncAvailable() ? 'syncing' : 'offline',
+      syncError: null,
+    });
+    await get().hydrate(userId, generation);
+  },
+
+  startCloudSync: (userId) => {
+    get().stopCloudSync();
+    unsubscribeCloud = subscribeCloudChanges(userId, () => {
+      void (async () => {
+        if (!isSyncAvailable() || !get().hydrated) return;
+        try {
+          const cloud = await pullCloudData(userId);
+          if (!cloud) return;
+          const cloudTime = new Date(cloud.updatedAt).getTime();
+          // Ignore echoes of our own push (realtime often fires before pull sees new row).
+          if (cloudTime <= lastCloudPushAt + 3000) return;
+
+          skipCloudPush = true;
+          const current = get();
+          const merged = mergeSyncPayloads(getSyncPayload(current), cloud.payload);
+          set({
+            ...migrateData({
+              ...getPersistableData(current),
+              ...merged,
+            }),
+            syncStatus: 'synced',
+            syncError: null,
+          });
+          skipCloudPush = false;
+          lastCloudPushAt = cloudTime;
+          await get().persistLocal();
+        } catch (err) {
+          console.error('Remote sync failed:', err);
+          set({
+            syncStatus: 'error',
+            syncError: err instanceof Error ? err.message : 'Remote sync failed',
+          });
+        }
+      })();
+    });
+  },
+
+  stopCloudSync: () => {
+    unsubscribeCloud?.();
+    unsubscribeCloud = null;
+  },
+
+  hydrate: async (userId = null, generation = hydrateGeneration) => {
     if (get().hydrated || hydrateStarted) return;
     hydrateStarted = true;
 
+    const isStale = () => generation !== hydrateGeneration;
+
     try {
-      let raw: AppData | null = null;
-      if (window.electronAPI?.isElectron) {
-        raw = await window.electronAPI.loadData();
+      let raw = await loadLocalRaw();
+      if (isStale()) return;
+
+      if (userId && isSyncAvailable()) {
+        try {
+          const cloud = await pullCloudData(userId);
+          if (isStale()) return;
+
+          if (cloud && raw) {
+            const localPayload = getSyncPayload(migrateData(raw) as Store);
+            const merged = mergeSyncPayloads(localPayload, cloud.payload);
+            lastCloudPushAt = new Date(cloud.updatedAt).getTime();
+            raw = {
+              ...(raw ?? defaultData),
+              ...merged,
+              selectedFolderId: raw?.selectedFolderId ?? defaultData.selectedFolderId,
+              selectedNoteId: raw?.selectedNoteId ?? null,
+              viewMode: raw?.viewMode ?? defaultData.viewMode,
+              selectedTag: raw?.selectedTag ?? null,
+            };
+            const updatedAt = await pushCloudData(userId, merged);
+            lastCloudPushAt = new Date(updatedAt).getTime();
+          } else if (cloud && (!raw || !hasSyncContent(getSyncPayload(migrateData(raw) as Store)))) {
+            lastCloudPushAt = new Date(cloud.updatedAt).getTime();
+            raw = {
+              ...defaultData,
+              ...cloud.payload,
+            };
+          } else if (raw) {
+            const migrated = migrateData(raw);
+            const payload = getSyncPayload({ ...get(), ...migrated } as Store);
+            if (hasSyncContent(payload)) {
+              const updatedAt = await pushCloudData(userId, payload);
+              lastCloudPushAt = new Date(updatedAt).getTime();
+            }
+          }
+          if (!isStale()) set({ syncStatus: 'synced', syncError: null });
+        } catch (err) {
+          console.error('Cloud sync failed:', err);
+          if (!isStale()) {
+            set({
+              syncStatus: 'error',
+              syncError: err instanceof Error ? err.message : 'Sync failed',
+            });
+          }
+        }
       } else {
-        const stored = localStorage.getItem('notes-app-data');
-        if (stored) raw = JSON.parse(stored) as AppData;
+        if (!isStale()) set({ syncStatus: 'offline', syncError: null });
       }
+
+      if (isStale()) return;
 
       if (raw) {
         set({ ...migrateData(raw), hydrated: true });
+        if (window.electronAPI?.isElectron) {
+          await saveLocalRaw(getPersistableData({ ...get(), ...migrateData(raw) } as Store));
+        }
         return;
       }
 
@@ -278,17 +462,66 @@ export const useStore = create<Store>((set, get) => ({
     void get().persist();
   },
 
+  persistLocal: async () => {
+    if (!get().hydrated) return;
+    await saveLocalRaw(getPersistableData(get()));
+  },
+
+  mergeAndUploadDeviceNotes: async () => {
+    const userId = useAuthStore.getState().user?.id;
+    if (!userId || !isSyncAvailable()) {
+      throw new Error('Sign in to sync first');
+    }
+
+    const localRaw = await loadDeviceRawForUpload();
+    if (!localRaw) {
+      throw new Error('No notes found on this device');
+    }
+
+    const localPayload = getSyncPayload(migrateData(localRaw) as Store);
+    const cloud = await pullCloudData(userId);
+    const merged = mergeSyncPayloads(localPayload, cloud?.payload ?? emptySyncPayload());
+
+    skipCloudPush = true;
+    const current = get();
+    set({
+      ...migrateData({
+        ...getPersistableData(current),
+        ...merged,
+      }),
+      syncStatus: 'syncing',
+      syncError: null,
+    });
+    skipCloudPush = false;
+
+    const updatedAt = await pushCloudData(userId, merged);
+    lastCloudPushAt = new Date(updatedAt).getTime();
+    await get().persistLocal();
+    set({ syncStatus: 'synced', syncError: null });
+
+    return { notes: merged.notes.length, folders: merged.folders.length };
+  },
+
   persist: async () => {
     if (!get().hydrated) return;
-    const data = getPersistableData(get());
+    await get().persistLocal();
 
-    if (window.electronAPI?.isElectron) {
-      const ok = window.electronAPI.saveDataSync
-        ? window.electronAPI.saveDataSync(data)
-        : await window.electronAPI.saveData(data);
-      if (!ok) console.error('Failed to save notes to disk');
-    } else {
-      localStorage.setItem('notes-app-data', JSON.stringify(data));
+    if (skipCloudPush || !isSyncAvailable()) return;
+
+    const userId = useAuthStore.getState().user?.id;
+    if (!userId) return;
+
+    set({ syncStatus: 'syncing' });
+    try {
+      const updatedAt = await pushCloudData(userId, getSyncPayload(get()));
+      lastCloudPushAt = new Date(updatedAt).getTime();
+      set({ syncStatus: 'synced', syncError: null });
+    } catch (err) {
+      console.error('Cloud push failed:', err);
+      set({
+        syncStatus: 'error',
+        syncError: err instanceof Error ? err.message : 'Sync failed',
+      });
     }
   },
 
@@ -298,11 +531,9 @@ export const useStore = create<Store>((set, get) => ({
       saveTimeout = null;
     }
     if (!get().hydrated) return;
-    const data = getPersistableData(get());
     if (window.electronAPI?.saveDataSync) {
-      const ok = window.electronAPI.saveDataSync(data);
+      const ok = window.electronAPI.saveDataSync(getPersistableData(get()));
       if (!ok) console.error('Failed to save notes to disk');
-      return;
     }
     await get().persist();
   },

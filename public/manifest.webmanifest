@@ -1,0 +1,16 @@
+{
+  "name": "Notes",
+  "short_name": "Notes",
+  "description": "Personal notes with folders, calendar, and sync",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}

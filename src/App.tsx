@@ -44,6 +44,10 @@ import {
   parentIdFromDropId,
 } from './types';
 import { useIsMobile } from './hooks/useIsMobile';
+import { useAuthStore } from './store/authStore';
+import { useCloudSync } from './hooks/useCloudSync';
+import { AuthScreen } from './components/AuthScreen';
+import { isSupabaseConfigured } from './sync/supabaseClient';
 
 export default function App() {
   const {
@@ -56,11 +60,13 @@ export default function App() {
     dismissBanner,
   } = useAppUpdater();
 
+  const authLoading = useAuthStore((s) => s.authLoading);
+  const session = useAuthStore((s) => s.session);
+  const initAuth = useAuthStore((s) => s.initAuth);
   const hydrated = useStore((s) => s.hydrated);
   const theme = useStore((s) => s.theme);
   const colorPalette = useStore((s) => s.colorPalette);
   const viewMode = useStore((s) => s.viewMode);
-  const hydrate = useStore((s) => s.hydrate);
   const moveNote = useStore((s) => s.moveNote);
   const reorderNotes = useStore((s) => s.reorderNotes);
   const reorderFolders = useStore((s) => s.reorderFolders);
@@ -95,10 +101,13 @@ export default function App() {
   const showMobileEditor = isMobile && viewMode === 'notes' && !!selectedNoteId;
 
   useKeyboardShortcuts();
+  useCloudSync();
+
+  const requiresAuth = !isElectron && isSupabaseConfigured();
 
   useEffect(() => {
-    hydrate();
-  }, [hydrate]);
+    void initAuth();
+  }, [initAuth]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -370,15 +379,19 @@ export default function App() {
     }
   };
 
-  if (!hydrated) {
+  if (authLoading || (requiresAuth && session && !hydrated) || (!requiresAuth && !hydrated)) {
     return (
-      <div className="h-screen flex items-center justify-center bg-background">
+      <div className="h-screen flex items-center justify-center bg-background safe-area-padding">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           <p className="text-sm text-muted-foreground">Loading notes...</p>
         </div>
       </div>
     );
+  }
+
+  if (requiresAuth && !session) {
+    return <AuthScreen />;
   }
 
   return (
@@ -395,7 +408,7 @@ export default function App() {
       onDragEnd={handleDragEnd}
       onDragCancel={clearDragState}
     >
-      <div className="h-screen flex flex-col overflow-hidden bg-background text-foreground">
+      <div className="h-[100dvh] flex flex-col overflow-hidden bg-background text-foreground safe-area-padding">
         <UpdateBanner
           state={bannerState}
           onDownload={downloadUpdate}

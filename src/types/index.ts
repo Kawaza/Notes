@@ -157,6 +157,7 @@ declare global {
   interface Window {
     electronAPI?: {
       loadData: () => Promise<AppData | null>;
+      loadDataBackup?: () => Promise<AppData | null>;
       saveData: (data: AppData) => Promise<boolean>;
       saveDataSync: (data: AppData) => boolean;
       hasDataFile: () => Promise<boolean>;

@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   loadData: () => ipcRenderer.invoke('load-data'),
+  loadDataBackup: () => ipcRenderer.invoke('load-data-backup'),
   saveData: (data) => ipcRenderer.invoke('save-data', data),
   saveDataSync: (data) => ipcRenderer.sendSync('save-data-sync', data),
   hasDataFile: () => ipcRenderer.invoke('has-data-file'),
