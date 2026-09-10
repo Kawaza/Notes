@@ -48,21 +48,23 @@ async function writeIcon(source, outPath, size) {
     .toFile(outPath);
 }
 
-/** White background + centered logo with padding (home screen / PWA). */
-async function writePaddedWhiteIcon(source, outPath, size, logoScale = 0.4) {
+const HOME_SCREEN_BG = { r: 255, g: 255, b: 255 };
+
+/** Square, fully opaque home-screen icon (no alpha — iOS adds gloss if any transparency exists). */
+async function writeOpaqueHomeScreenIcon(source, outPath, size, logoScale = 0.4) {
   const logoSize = Math.round(size * logoScale);
   const offset = Math.round((size - logoSize) / 2);
-  // Rasterize large, threshold to pure black/white (avoids grey fringe that iOS reads as a gradient).
   const logo = await sharp(source)
     .resize(logoSize * 4, logoSize * 4, {
       fit: 'contain',
-      background: { r: 255, g: 255, b: 255, alpha: 1 },
+      background: { ...HOME_SCREEN_BG, alpha: 1 },
     })
-    .flatten({ background: { r: 255, g: 255, b: 255 } })
+    .flatten({ background: HOME_SCREEN_BG })
     .greyscale()
     .threshold(235)
     .resize(logoSize, logoSize, { kernel: sharp.kernel.nearest })
-    .png()
+    .flatten({ background: HOME_SCREEN_BG })
+    .removeAlpha()
     .toBuffer();
 
   await sharp({
@@ -70,12 +72,22 @@ async function writePaddedWhiteIcon(source, outPath, size, logoScale = 0.4) {
       width: size,
       height: size,
       channels: 3,
-      background: { r: 255, g: 255, b: 255 },
+      background: HOME_SCREEN_BG,
     },
   })
     .composite([{ input: logo, left: offset, top: offset }])
+    .flatten({ background: HOME_SCREEN_BG })
+    .removeAlpha()
     .png({ compressionLevel: 9, palette: false })
     .toFile(outPath);
+
+  const meta = await sharp(outPath).metadata();
+  if (meta.hasAlpha) {
+    throw new Error(`${outPath} must not have an alpha channel`);
+  }
+  if (meta.width !== size || meta.height !== size) {
+    throw new Error(`${outPath} must be exactly ${size}x${size}`);
+  }
 }
 
 const lightSource = await prepareSource(false);
@@ -107,11 +119,15 @@ await writeIcon(lightSource, path.join(publicDir, 'favicon.png'), 512);
 await writeIcon(darkSource, path.join(publicDir, 'favicon-dark.png'), 512);
 await writeIcon(lightSource, path.join(publicDir, 'logo-icon.png'), 512);
 
-for (const size of [180, 192, 512]) {
-  const name = size === 180 ? 'apple-touch-icon.png' : `pwa-icon-${size}.png`;
-  await writePaddedWhiteIcon(lightSource, path.join(publicDir, name), size);
+// iOS home screen — exact square sizes, fully opaque RGB PNGs (iOS applies its own mask).
+for (const size of [180, 152, 167]) {
+  const name = size === 180 ? 'apple-touch-icon.png' : `apple-touch-icon-${size}.png`;
+  await writeOpaqueHomeScreenIcon(lightSource, path.join(publicDir, name), size);
 }
-await writePaddedWhiteIcon(lightSource, path.join(publicDir, 'apple-touch-icon-512.png'), 512);
+
+for (const size of [192, 512]) {
+  await writeOpaqueHomeScreenIcon(lightSource, path.join(publicDir, `pwa-icon-${size}.png`), size);
+}
 
 /** Keep source padding; use transparent background so uneven margins don't become black lines. */
 async function renderDesktopIcon(size) {
