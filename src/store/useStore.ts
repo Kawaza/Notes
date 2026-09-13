@@ -37,6 +37,7 @@ interface Store extends AppData {
   rehydrate: (userId: string | null) => Promise<void>;
   startCloudSync: (userId: string) => void;
   stopCloudSync: () => void;
+  pullRemoteSync: (userId?: string) => Promise<void>;
   persist: () => Promise<void>;
   persistLocal: () => Promise<void>;
   flushPersist: () => Promise<void>;
@@ -131,9 +132,35 @@ let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
 let skipCloudPush = false;
 
+/** Timestamp of our last successful cloud push (echo detection). */
 let lastCloudPushAt = 0;
 
+/** Latest cloud row timestamp we have merged into this client. */
+let lastKnownCloudUpdatedAt = 0;
+
+let lastPushedPayloadJson: string | null = null;
+
 let unsubscribeCloud: (() => void) | null = null;
+
+let cloudPullInterval: ReturnType<typeof setInterval> | null = null;
+
+function resetCloudSyncTracking() {
+  lastCloudPushAt = 0;
+  lastKnownCloudUpdatedAt = 0;
+  lastPushedPayloadJson = null;
+}
+
+function markCloudApplied(updatedAt: string) {
+  const t = new Date(updatedAt).getTime();
+  lastKnownCloudUpdatedAt = t;
+}
+
+function markCloudPushed(updatedAt: string, payload: SyncPayload) {
+  const t = new Date(updatedAt).getTime();
+  lastCloudPushAt = t;
+  lastKnownCloudUpdatedAt = t;
+  lastPushedPayloadJson = JSON.stringify(payload);
+}
 
 function getSyncPayload(state: Store): SyncPayload {
   return {
@@ -295,12 +322,46 @@ export const useStore = create<Store>((set, get) => ({
   rehydrate: async (userId) => {
     const generation = ++hydrateGeneration;
     hydrateStarted = false;
+    if (!userId) resetCloudSyncTracking();
     set({
       hydrated: false,
       syncStatus: userId && isSyncAvailable() ? 'syncing' : 'offline',
       syncError: null,
     });
     await get().hydrate(userId, generation);
+  },
+
+  pullRemoteSync: async (userId = useAuthStore.getState().user?.id ?? undefined) => {
+    if (!userId || !isSyncAvailable() || !get().hydrated) return;
+
+    try {
+      const cloud = await pullCloudData(userId);
+      if (!cloud) return;
+
+      const cloudTime = new Date(cloud.updatedAt).getTime();
+      if (cloudTime <= lastKnownCloudUpdatedAt) return;
+
+      skipCloudPush = true;
+      const current = get();
+      const merged = mergeSyncPayloads(getSyncPayload(current), cloud.payload);
+      set({
+        ...migrateData({
+          ...getPersistableData(current),
+          ...merged,
+        }),
+        syncStatus: 'synced',
+        syncError: null,
+      });
+      skipCloudPush = false;
+      markCloudApplied(cloud.updatedAt);
+      await get().persistLocal();
+    } catch (err) {
+      console.error('Remote sync failed:', err);
+      set({
+        syncStatus: 'error',
+        syncError: err instanceof Error ? err.message : 'Remote sync failed',
+      });
+    }
   },
 
   startCloudSync: (userId) => {
@@ -312,8 +373,9 @@ export const useStore = create<Store>((set, get) => ({
           const cloud = await pullCloudData(userId);
           if (!cloud) return;
           const cloudTime = new Date(cloud.updatedAt).getTime();
-          // Ignore echoes of our own push (realtime often fires before pull sees new row).
-          if (cloudTime <= lastCloudPushAt + 3000) return;
+          // Ignore only our own push echo, not other devices' updates within 3s.
+          if (Math.abs(cloudTime - lastCloudPushAt) < 500) return;
+          if (cloudTime <= lastKnownCloudUpdatedAt) return;
 
           skipCloudPush = true;
           const current = get();
@@ -327,7 +389,7 @@ export const useStore = create<Store>((set, get) => ({
             syncError: null,
           });
           skipCloudPush = false;
-          lastCloudPushAt = cloudTime;
+          markCloudApplied(cloud.updatedAt);
           await get().persistLocal();
         } catch (err) {
           console.error('Remote sync failed:', err);
@@ -338,11 +400,20 @@ export const useStore = create<Store>((set, get) => ({
         }
       })();
     });
+
+    void get().pullRemoteSync(userId);
+    cloudPullInterval = setInterval(() => {
+      void get().pullRemoteSync(userId);
+    }, 30_000);
   },
 
   stopCloudSync: () => {
     unsubscribeCloud?.();
     unsubscribeCloud = null;
+    if (cloudPullInterval) {
+      clearInterval(cloudPullInterval);
+      cloudPullInterval = null;
+    }
   },
 
   hydrate: async (userId = null, generation = hydrateGeneration) => {
@@ -363,7 +434,7 @@ export const useStore = create<Store>((set, get) => ({
           if (cloud && raw) {
             const localPayload = getSyncPayload(migrateData(raw) as Store);
             const merged = mergeSyncPayloads(localPayload, cloud.payload);
-            lastCloudPushAt = new Date(cloud.updatedAt).getTime();
+            markCloudApplied(cloud.updatedAt);
             raw = {
               ...(raw ?? defaultData),
               ...merged,
@@ -373,9 +444,9 @@ export const useStore = create<Store>((set, get) => ({
               selectedTag: raw?.selectedTag ?? null,
             };
             const updatedAt = await pushCloudData(userId, merged);
-            lastCloudPushAt = new Date(updatedAt).getTime();
+            markCloudPushed(updatedAt, merged);
           } else if (cloud && (!raw || !hasSyncContent(getSyncPayload(migrateData(raw) as Store)))) {
-            lastCloudPushAt = new Date(cloud.updatedAt).getTime();
+            markCloudApplied(cloud.updatedAt);
             raw = {
               ...defaultData,
               ...cloud.payload,
@@ -385,7 +456,7 @@ export const useStore = create<Store>((set, get) => ({
             const payload = getSyncPayload({ ...get(), ...migrated } as Store);
             if (hasSyncContent(payload)) {
               const updatedAt = await pushCloudData(userId, payload);
-              lastCloudPushAt = new Date(updatedAt).getTime();
+              markCloudPushed(updatedAt, payload);
             }
           }
           if (!isStale()) set({ syncStatus: 'synced', syncError: null });
@@ -495,7 +566,7 @@ export const useStore = create<Store>((set, get) => ({
     skipCloudPush = false;
 
     const updatedAt = await pushCloudData(userId, merged);
-    lastCloudPushAt = new Date(updatedAt).getTime();
+    markCloudPushed(updatedAt, merged);
     await get().persistLocal();
     set({ syncStatus: 'synced', syncError: null });
 
@@ -511,10 +582,14 @@ export const useStore = create<Store>((set, get) => ({
     const userId = useAuthStore.getState().user?.id;
     if (!userId) return;
 
+    const payload = getSyncPayload(get());
+    const payloadJson = JSON.stringify(payload);
+    if (payloadJson === lastPushedPayloadJson) return;
+
     set({ syncStatus: 'syncing' });
     try {
-      const updatedAt = await pushCloudData(userId, getSyncPayload(get()));
-      lastCloudPushAt = new Date(updatedAt).getTime();
+      const updatedAt = await pushCloudData(userId, payload);
+      markCloudPushed(updatedAt, payload);
       set({ syncStatus: 'synced', syncError: null });
     } catch (err) {
       console.error('Cloud push failed:', err);

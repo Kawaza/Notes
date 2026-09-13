@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Cloud, Loader2, LogOut, Upload } from 'lucide-react';
+import { Cloud, Loader2, LogOut, RefreshCw, Upload } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useStore } from '../store/useStore';
 import { isSupabaseConfigured } from '../sync/supabaseClient';
@@ -13,6 +13,7 @@ export function SyncAccountSection() {
   const clearAuthError = useAuthStore((s) => s.clearAuthError);
   const rehydrate = useStore((s) => s.rehydrate);
   const mergeAndUploadDeviceNotes = useStore((s) => s.mergeAndUploadDeviceNotes);
+  const pullRemoteSync = useStore((s) => s.pullRemoteSync);
   const syncStatus = useStore((s) => s.syncStatus);
   const syncError = useStore((s) => s.syncError);
 
@@ -21,6 +22,7 @@ export function SyncAccountSection() {
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [pulling, setPulling] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
 
   const isElectron = Boolean(window.electronAPI?.isElectron);
@@ -56,6 +58,19 @@ export function SyncAccountSection() {
       // error in store
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handlePull = async () => {
+    setPulling(true);
+    setUploadMessage(null);
+    try {
+      await pullRemoteSync();
+      setUploadMessage('Synced latest notes from the cloud.');
+    } catch (err) {
+      setUploadMessage(err instanceof Error ? err.message : 'Sync failed');
+    } finally {
+      setPulling(false);
     }
   };
 
@@ -95,11 +110,21 @@ export function SyncAccountSection() {
             {syncError ? ` — ${syncError}` : ''}
           </p>
 
-          {isElectron && (
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
-                Merges notes saved on this computer with your cloud account (keeps everything from both).
-              </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={pulling || syncStatus === 'syncing'}
+              onClick={() => void handlePull()}
+              className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm font-medium hover:bg-muted cursor-pointer disabled:opacity-60"
+            >
+              {pulling ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <RefreshCw size={14} />
+              )}
+              Sync now
+            </button>
+            {isElectron && (
               <button
                 type="button"
                 disabled={uploading}
@@ -111,9 +136,14 @@ export function SyncAccountSection() {
                 ) : (
                   <Upload size={14} />
                 )}
-                Upload notes from this computer
+                Upload from this computer
               </button>
-            </div>
+            )}
+          </div>
+          {isElectron && (
+            <p className="text-xs text-muted-foreground">
+              Upload merges this computer&apos;s notes with your cloud account.
+            </p>
           )}
 
           {uploadMessage && (

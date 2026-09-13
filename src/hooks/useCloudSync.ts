@@ -10,6 +10,7 @@ export function useCloudSync() {
   const rehydrate = useStore((s) => s.rehydrate);
   const startCloudSync = useStore((s) => s.startCloudSync);
   const stopCloudSync = useStore((s) => s.stopCloudSync);
+  const pullRemoteSync = useStore((s) => s.pullRemoteSync);
 
   useEffect(() => {
     if (authLoading) return;
@@ -31,4 +32,24 @@ export function useCloudSync() {
       stopCloudSync();
     };
   }, [authLoading, userId, rehydrate, startCloudSync, stopCloudSync]);
+
+  useEffect(() => {
+    if (authLoading || !userId) return;
+
+    const onFocus = () => {
+      void pullRemoteSync(userId);
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') onFocus();
+    };
+
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [authLoading, userId, pullRemoteSync]);
 }
