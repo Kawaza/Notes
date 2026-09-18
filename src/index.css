@@ -629,13 +629,27 @@ html {
 }
 
 @media (max-width: 767px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  /* iOS Safari zooms focused fields below 16px — keep all editable text at 16px+ */
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select,
+  .prose-editor,
+  .ProseMirror {
+    font-size: 16px;
+  }
+
   .prose-editor {
-    font-size: 15px;
     line-height: 1.65;
+    min-height: 180px;
   }
 
   .prose-editor h1 {
-    font-size: 1.5em;
+    font-size: 1.45em;
   }
 
   .prose-editor h2 {
@@ -648,6 +662,22 @@ html {
   textarea,
   select {
     touch-action: manipulation;
+  }
+
+  .mobile-toolbar-scroll {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    max-width: 100%;
+    overscroll-behavior-x: contain;
+  }
+
+  .mobile-toolbar-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-editor-scroll {
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .calendar-container .fc .fc-toolbar {

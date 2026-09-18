@@ -66,7 +66,7 @@ export function TaskSchedulePanel({
 
   const pad = compact ? 'px-4' : 'px-4 md:px-8';
   const inputClass =
-    'px-1.5 py-1 text-xs rounded-md bg-background border border-border outline-none focus:ring-1 focus:ring-primary/40 min-w-0';
+    'px-2 py-1.5 md:px-1.5 md:py-1 text-base md:text-xs rounded-md bg-background border border-border outline-none focus:ring-1 focus:ring-primary/40 min-w-0';
 
   const folderSelect = (
     <FolderSelect

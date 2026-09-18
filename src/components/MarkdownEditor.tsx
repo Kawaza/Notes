@@ -32,7 +32,7 @@ export function MarkdownEditor({ content, onChange, onWikiClick, onFileDrop }: M
   };
 
   return (
-    <div className="flex flex-1 gap-0 overflow-hidden min-h-0">
+    <div className="flex flex-col md:flex-row flex-1 gap-0 overflow-hidden min-h-0">
       <textarea
         ref={textareaRef}
         value={content}
@@ -41,9 +41,9 @@ export function MarkdownEditor({ content, onChange, onWikiClick, onFileDrop }: M
         onDragOver={(e) => e.preventDefault()}
         placeholder="Write markdown... Use [[Note Title]] for wiki links. Drop files or images here."
         spellCheck={false}
-        className="flex-1 resize-none bg-transparent outline-none font-mono text-sm leading-relaxed px-1 py-0 min-h-[300px] border-r border-border/30"
+        className="flex-1 resize-none bg-transparent outline-none font-mono text-base md:text-sm leading-relaxed px-1 py-0 min-h-[240px] md:min-h-[300px] md:border-r border-border/30"
       />
-      <div className="flex-1 overflow-y-auto px-4 py-0 markdown-preview">
+      <div className="hidden md:flex flex-1 overflow-y-auto px-4 py-0 markdown-preview min-h-0">
         <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-3">Preview</p>
         <div ref={previewRef} className="prose-editor text-sm" />
       </div>

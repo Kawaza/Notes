@@ -84,11 +84,11 @@ export function GlobalSearch() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[max(1rem,env(safe-area-inset-top))] md:pt-[15vh] px-3 bg-black/40 backdrop-blur-sm"
       onClick={() => setSearchOpen(false)}
     >
       <div
-        className="w-full max-w-lg mx-4 rounded-xl border border-border bg-background shadow-2xl overflow-hidden"
+        className="w-full max-w-lg rounded-xl border border-border bg-background shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
@@ -102,9 +102,11 @@ export function GlobalSearch() {
             }}
             onKeyDown={handleKeyDown}
             placeholder="Search notes, folders, tags..."
-            className="flex-1 bg-transparent outline-none text-sm"
+            className="flex-1 bg-transparent outline-none text-base md:text-sm min-w-0"
           />
-          <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">ESC</kbd>
+          <kbd className="hidden md:inline text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+            ESC
+          </kbd>
           <button
             onClick={() => setSearchOpen(false)}
             className="p-1 rounded hover:bg-muted cursor-pointer"

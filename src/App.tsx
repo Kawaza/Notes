@@ -408,7 +408,7 @@ export default function App() {
       onDragEnd={handleDragEnd}
       onDragCancel={clearDragState}
     >
-      <div className="h-[100dvh] flex flex-col overflow-hidden bg-background text-foreground safe-area-padding">
+      <div className="h-[100dvh] flex flex-col overflow-hidden overflow-x-hidden bg-background text-foreground safe-area-padding">
         <UpdateBanner
           state={bannerState}
           onDownload={downloadUpdate}

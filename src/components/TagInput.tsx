@@ -40,7 +40,7 @@ export function TagInput({ noteId, tags }: { noteId: string; tags: string[] }) {
               if (e.key === 'Enter') handleAdd();
             }}
             placeholder="Add tag..."
-            className="text-xs bg-transparent outline-none w-20 placeholder:text-muted-foreground/50"
+            className="text-base md:text-xs bg-transparent outline-none w-28 md:w-20 min-w-0 placeholder:text-muted-foreground/50"
           />
           <button
             onClick={handleAdd}

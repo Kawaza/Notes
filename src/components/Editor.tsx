@@ -213,10 +213,10 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
   ];
 
   return (
-    <div className={`flex flex-col bg-background h-full overflow-hidden ${compact ? '' : 'flex-1'}`}>
+    <div className={`flex flex-col bg-background h-full overflow-hidden max-md:overflow-x-hidden ${compact ? '' : 'flex-1'}`}>
       {isMobileEditor ? (
         <div className="shrink-0 border-b border-border">
-          <div className="flex items-start gap-1 px-3 py-2.5">
+          <div className="flex items-start gap-1 px-3 py-2.5 max-w-full">
             <button
               type="button"
               onClick={onMobileBack}
@@ -348,7 +348,7 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
       )}
 
       <div
-        className={`flex-1 overflow-y-auto ${padding} py-2 md:py-3 flex flex-col min-h-0`}
+        className={`flex-1 overflow-y-auto mobile-editor-scroll ${padding} py-2 md:py-3 flex flex-col min-h-0 max-md:overflow-x-hidden`}
         onDragOver={(e) => {
           if (isMarkdown) e.preventDefault();
         }}

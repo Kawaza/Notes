@@ -1084,7 +1084,7 @@ export function Sidebar() {
         </FolderDropZone>
       </nav>
 
-      <div className="border-t border-border p-3 space-y-1.5">
+      <div className="border-t border-border p-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] space-y-1.5">
         <button
           onClick={handleNewNote}
           className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer"
