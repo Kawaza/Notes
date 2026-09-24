@@ -5,7 +5,7 @@ import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, DEFAULT_FOLDERS_SECTION_NAME, isFolder
 import { htmlToMarkdown, markdownToHtml } from '../utils/markdown';
 import { dndLog } from '../utils/dndDebug';
 import { isSyncAvailable, pullCloudData, pushCloudData, subscribeCloudChanges } from '../sync/cloudSync';
-import { formatSyncError } from '../sync/syncUtils';
+import { formatSyncError, withSyncTimeout } from '../sync/syncUtils';
 import { emptySyncPayload, mergeSyncPayloads } from '../sync/mergeSync';
 import type { SyncPayload, SyncStatus } from '../sync/types';
 import { useAuthStore } from './authStore';
@@ -124,10 +124,14 @@ function getPersistableData(state: Store): AppData {
   };
 }
 
-let hydrateStarted = false;
-
 /** Ignore stale hydrate/rehydrate results when auth changes mid-load. */
 let hydrateGeneration = 0;
+
+const HYDRATE_CLOUD_TIMEOUT_MS = 25_000;
+
+function isHydrateGenerationCurrent(generation: number) {
+  return generation === hydrateGeneration;
+}
 
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -330,7 +334,6 @@ export const useStore = create<Store>((set, get) => ({
 
   rehydrate: async (userId) => {
     const generation = ++hydrateGeneration;
-    hydrateStarted = false;
     if (!userId) resetCloudSyncTracking();
     set({
       hydrated: false,
@@ -447,10 +450,15 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   hydrate: async (userId = null, generation = hydrateGeneration) => {
-    if (get().hydrated || hydrateStarted) return;
-    hydrateStarted = true;
+    const isStale = () => !isHydrateGenerationCurrent(generation);
 
-    const isStale = () => generation !== hydrateGeneration;
+    const finishHydrated = (partial: Partial<Store>) => {
+      if (isStale()) return;
+      set({ ...partial, hydrated: true });
+      if (userId && isSyncAvailable()) {
+        void get().persist();
+      }
+    };
 
     try {
       let raw = await loadLocalRaw();
@@ -458,7 +466,11 @@ export const useStore = create<Store>((set, get) => ({
 
       if (userId && isSyncAvailable()) {
         try {
-          const cloud = await pullCloudData(userId);
+          const cloud = await withSyncTimeout(
+            pullCloudData(userId),
+            HYDRATE_CLOUD_TIMEOUT_MS,
+            'Loading notes',
+          );
           if (isStale()) return;
 
           if (cloud && raw) {
@@ -473,21 +485,12 @@ export const useStore = create<Store>((set, get) => ({
               viewMode: raw?.viewMode ?? defaultData.viewMode,
               selectedTag: raw?.selectedTag ?? null,
             };
-            const updatedAt = await pushCloudData(userId, merged);
-            markCloudPushed(updatedAt, merged);
           } else if (cloud && (!raw || !hasSyncContent(getSyncPayload(migrateData(raw) as Store)))) {
             markCloudApplied(cloud.updatedAt);
             raw = {
               ...defaultData,
               ...cloud.payload,
             };
-          } else if (raw) {
-            const migrated = migrateData(raw);
-            const payload = getSyncPayload({ ...get(), ...migrated } as Store);
-            if (hasSyncContent(payload)) {
-              const updatedAt = await pushCloudData(userId, payload);
-              markCloudPushed(updatedAt, payload);
-            }
           }
           if (!isStale()) set({ syncStatus: 'synced', syncError: null });
         } catch (err) {
@@ -499,16 +502,16 @@ export const useStore = create<Store>((set, get) => ({
             });
           }
         }
-      } else {
-        if (!isStale()) set({ syncStatus: 'offline', syncError: null });
+      } else if (!isStale()) {
+        set({ syncStatus: 'offline', syncError: null });
       }
 
       if (isStale()) return;
 
       if (raw) {
-        set({ ...migrateData(raw), hydrated: true });
-        if (window.electronAPI?.isElectron) {
-          await saveLocalRaw(getPersistableData({ ...get(), ...migrateData(raw) } as Store));
+        finishHydrated(migrateData(raw) as Partial<Store>);
+        if (!isStale() && window.electronAPI?.isElectron) {
+          await saveLocalRaw(getPersistableData(get()));
         }
         return;
       }
@@ -520,19 +523,20 @@ export const useStore = create<Store>((set, get) => ({
 
       if (hasExistingFile) {
         console.error('Saved data exists but could not be loaded — not overwriting.');
-        set({ hydrated: true });
+        finishHydrated({});
         return;
       }
     } catch (err) {
       console.error('Failed to load saved data:', err);
-      set({ hydrated: true });
+      finishHydrated({});
       return;
     }
 
+    if (isStale()) return;
+
     const welcomeId = uuidv4();
     const now = new Date().toISOString();
-    set({
-      hydrated: true,
+    finishHydrated({
       notes: [
         migrateNote({
           id: welcomeId,
@@ -560,7 +564,6 @@ export const useStore = create<Store>((set, get) => ({
       ],
       selectedNoteId: welcomeId,
     });
-    void get().persist();
   },
 
   persistLocal: async () => {

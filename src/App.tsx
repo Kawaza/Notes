@@ -62,8 +62,12 @@ export default function App() {
 
   const authLoading = useAuthStore((s) => s.authLoading);
   const session = useAuthStore((s) => s.session);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
   const initAuth = useAuthStore((s) => s.initAuth);
   const hydrated = useStore((s) => s.hydrated);
+  const syncError = useStore((s) => s.syncError);
+  const rehydrate = useStore((s) => s.rehydrate);
+  const [loadingSlow, setLoadingSlow] = useState(false);
   const theme = useStore((s) => s.theme);
   const colorPalette = useStore((s) => s.colorPalette);
   const viewMode = useStore((s) => s.viewMode);
@@ -108,6 +112,15 @@ export default function App() {
   useEffect(() => {
     void initAuth();
   }, [initAuth]);
+
+  useEffect(() => {
+    if (hydrated) {
+      setLoadingSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setLoadingSlow(true), 12_000);
+    return () => window.clearTimeout(timer);
+  }, [hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -381,10 +394,22 @@ export default function App() {
 
   if (authLoading || (requiresAuth && session && !hydrated) || (!requiresAuth && !hydrated)) {
     return (
-      <div className="h-screen flex items-center justify-center bg-background safe-area-padding">
-        <div className="flex flex-col items-center gap-3">
+      <div className="h-[100dvh] flex items-center justify-center bg-background safe-area-padding mobile-page-padding">
+        <div className="flex flex-col items-center gap-3 max-w-sm text-center">
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           <p className="text-sm text-muted-foreground">Loading notes...</p>
+          {syncError && (
+            <p className="text-xs text-destructive leading-relaxed">{syncError}</p>
+          )}
+          {loadingSlow && (
+            <button
+              type="button"
+              onClick={() => void rehydrate(userId)}
+              className="mt-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted cursor-pointer"
+            >
+              Try again
+            </button>
+          )}
         </div>
       </div>
     );
