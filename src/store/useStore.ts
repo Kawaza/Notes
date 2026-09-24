@@ -359,13 +359,10 @@ export const useStore = create<Store>((set, get) => ({
       const merged = mergeSyncPayloads(localPayload, cloud.payload);
       const unchanged = JSON.stringify(localPayload) === JSON.stringify(merged);
 
-      if (unchanged && cloudTime <= lastKnownCloudUpdatedAt) {
-        set({ syncStatus: 'synced', syncError: null });
-        return;
-      }
-
       if (unchanged) {
-        markCloudApplied(cloud.updatedAt);
+        if (cloudTime > lastKnownCloudUpdatedAt) {
+          markCloudApplied(cloud.updatedAt);
+        }
         lastPushFailAt = 0;
         lastFailedPayloadJson = null;
         set({ syncStatus: 'synced', syncError: null });
@@ -400,38 +397,8 @@ export const useStore = create<Store>((set, get) => ({
   startCloudSync: (userId) => {
     get().stopCloudSync();
     unsubscribeCloud = subscribeCloudChanges(userId, () => {
-      void (async () => {
-        if (!isSyncAvailable() || !get().hydrated) return;
-        try {
-          const cloud = await pullCloudData(userId);
-          if (!cloud) return;
-          const cloudTime = new Date(cloud.updatedAt).getTime();
-          // Ignore only our own push echo, not other devices' updates within 3s.
-          if (Math.abs(cloudTime - lastCloudPushAt) < 500) return;
-          if (cloudTime <= lastKnownCloudUpdatedAt) return;
-
-          skipCloudPush = true;
-          const current = get();
-          const merged = mergeSyncPayloads(getSyncPayload(current), cloud.payload);
-          set({
-            ...migrateData({
-              ...getPersistableData(current),
-              ...merged,
-            }),
-            syncStatus: 'synced',
-            syncError: null,
-          });
-          skipCloudPush = false;
-          markCloudApplied(cloud.updatedAt);
-          await get().persistLocal();
-        } catch (err) {
-          console.error('Remote sync failed:', err);
-          set({
-            syncStatus: 'error',
-            syncError: formatSyncError(err),
-          });
-        }
-      })();
+      if (Math.abs(Date.now() - lastCloudPushAt) < 500) return;
+      void get().pullRemoteSync(userId);
     });
 
     void get().pullRemoteSync(userId);
@@ -634,15 +601,49 @@ export const useStore = create<Store>((set, get) => ({
     cloudPushInFlight = (async () => {
       set({ syncStatus: 'syncing', syncError: null });
       try {
-        const updatedAt = await pushCloudData(userId, payload);
-        markCloudPushed(updatedAt, payload);
+        let payloadToPush = getSyncPayload(get());
+        try {
+          const cloud = await withSyncTimeout(pullCloudData(userId), 15_000, 'Sync');
+          if (cloud) {
+            const merged = mergeSyncPayloads(payloadToPush, cloud.payload);
+            const mergedJson = JSON.stringify(merged);
+            const localJson = JSON.stringify(payloadToPush);
+            if (mergedJson !== localJson) {
+              skipCloudPush = true;
+              set({
+                ...migrateData({
+                  ...getPersistableData(get()),
+                  ...merged,
+                }),
+              });
+              skipCloudPush = false;
+              payloadToPush = merged;
+              await get().persistLocal();
+            }
+            const cloudTime = new Date(cloud.updatedAt).getTime();
+            if (cloudTime > lastKnownCloudUpdatedAt) {
+              markCloudApplied(cloud.updatedAt);
+            }
+          }
+        } catch (pullErr) {
+          console.warn('Pre-push cloud merge skipped:', pullErr);
+        }
+
+        const pushJson = JSON.stringify(payloadToPush);
+        if (pushJson === lastPushedPayloadJson) {
+          set({ syncStatus: 'synced', syncError: null });
+          return;
+        }
+
+        const updatedAt = await pushCloudData(userId, payloadToPush);
+        markCloudPushed(updatedAt, payloadToPush);
         lastPushFailAt = 0;
         lastFailedPayloadJson = null;
         set({ syncStatus: 'synced', syncError: null });
       } catch (err) {
         console.error('Cloud push failed:', err);
         lastPushFailAt = Date.now();
-        lastFailedPayloadJson = payloadJson;
+        lastFailedPayloadJson = JSON.stringify(getSyncPayload(get()));
         set({
           syncStatus: 'error',
           syncError: formatSyncError(err),

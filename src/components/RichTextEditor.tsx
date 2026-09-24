@@ -26,6 +26,7 @@ import type { NoteAttachment } from '../types';
 import { LinkDialog } from './LinkDialog';
 import { NoteImage } from './NoteImageExtension';
 import { scrollMobileSelectionIntoView } from '../utils/mobileEditorScroll';
+import { editorHtmlEquivalent } from '../utils/editorHtml';
 
 const lowlight = createLowlight(common);
 
@@ -89,7 +90,24 @@ export function RichTextEditor({
 
   const editorRef = useRef<Editor | null>(null);
   const lastEmittedHtmlRef = useRef<string | null>(null);
+  const suppressExternalSyncUntilRef = useRef(0);
   const prevNoteIdRef = useRef(noteId);
+
+  const lockMobileEditorScrollFromDom = (dom: HTMLElement) => {
+    if (!window.matchMedia('(max-width: 767px)').matches) return;
+    const scrollEl = dom.closest('.mobile-editor-scroll') as HTMLElement | null;
+    const scrollTop = scrollEl?.scrollTop ?? 0;
+    const windowY = window.scrollY;
+    const restore = () => {
+      if (scrollEl) scrollEl.scrollTop = scrollTop;
+      if (window.scrollY !== windowY) window.scrollTo(0, windowY);
+    };
+    restore();
+    requestAnimationFrame(restore);
+    window.setTimeout(restore, 0);
+    window.setTimeout(restore, 50);
+    window.setTimeout(restore, 120);
+  };
 
   const insertImageFile = useCallback(
     async (
@@ -164,6 +182,31 @@ export function RichTextEditor({
       },
       // On mobile we scroll the note pane ourselves (keyboard-aware).
       handleScrollToSelection: () => !window.matchMedia('(max-width: 767px)').matches,
+      handleDOMEvents: {
+        mousedown: (view, event) => {
+          const target = event.target as HTMLElement | null;
+          if (!target?.closest('ul[data-type="taskList"]')) return false;
+          lockMobileEditorScrollFromDom(view.dom);
+          return false;
+        },
+        touchstart: (view, event) => {
+          const target = event.target as HTMLElement | null;
+          if (!target?.closest('ul[data-type="taskList"]')) return false;
+          lockMobileEditorScrollFromDom(view.dom);
+          return false;
+        },
+        focus: (view, event) => {
+          const target = event.target as HTMLElement | null;
+          if (
+            window.matchMedia('(max-width: 767px)').matches &&
+            target?.matches('input[type="checkbox"]')
+          ) {
+            target.blur();
+            lockMobileEditorScrollFromDom(view.dom);
+          }
+          return false;
+        },
+      },
       handleDrop: (view, event, _slice, moved) => {
         // Internal drags (e.g. repositioning an image) must not create new attachments.
         if (moved) return false;
@@ -187,7 +230,9 @@ export function RichTextEditor({
     onUpdate: ({ editor: ed }) => {
       const html = ed.getHTML();
       lastEmittedHtmlRef.current = html;
+      suppressExternalSyncUntilRef.current = Date.now() + 800;
       onUpdate(html);
+      lockMobileEditorScrollFromDom(ed.view.dom);
     },
   });
 
@@ -207,19 +252,33 @@ export function RichTextEditor({
       return;
     }
 
-    if (content === lastEmittedHtmlRef.current || content === editor.getHTML()) {
+    if (Date.now() < suppressExternalSyncUntilRef.current) {
+      return;
+    }
+
+    if (
+      content === lastEmittedHtmlRef.current ||
+      editorHtmlEquivalent(content, editor.getHTML()) ||
+      editorHtmlEquivalent(content, lastEmittedHtmlRef.current ?? '')
+    ) {
       return;
     }
 
     const scrollEl = editor.view.dom.closest('.mobile-editor-scroll') as HTMLElement | null;
     const scrollTop = scrollEl?.scrollTop ?? null;
+    const windowY = window.scrollY;
 
     editor.commands.setContent(content || '', { emitUpdate: false });
 
     if (scrollEl && scrollTop !== null) {
-      requestAnimationFrame(() => {
+      const restore = () => {
         scrollEl.scrollTop = scrollTop;
-      });
+        if (window.scrollY !== windowY) window.scrollTo(0, windowY);
+      };
+      restore();
+      requestAnimationFrame(restore);
+      window.setTimeout(restore, 0);
+      window.setTimeout(restore, 50);
     }
   }, [noteId, content, editor]);
 
