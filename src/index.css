@@ -678,6 +678,11 @@ html {
   .mobile-editor-scroll {
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
+    scroll-padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .prose-editor ul[data-type="taskList"] li > label input[type="checkbox"] {
+    scroll-margin: 0;
   }
 
   .calendar-container .fc .fc-toolbar {

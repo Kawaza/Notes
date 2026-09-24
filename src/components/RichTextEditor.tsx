@@ -25,6 +25,7 @@ import {
 import type { NoteAttachment } from '../types';
 import { LinkDialog } from './LinkDialog';
 import { NoteImage } from './NoteImageExtension';
+import { scrollMobileSelectionIntoView } from '../utils/mobileEditorScroll';
 
 const lowlight = createLowlight(common);
 
@@ -87,6 +88,8 @@ export function RichTextEditor({
   onAddAttachmentRef.current = onAddAttachment;
 
   const editorRef = useRef<Editor | null>(null);
+  const lastEmittedHtmlRef = useRef<string | null>(null);
+  const prevNoteIdRef = useRef(noteId);
 
   const insertImageFile = useCallback(
     async (
@@ -159,6 +162,7 @@ export function RichTextEditor({
         class: 'prose-editor focus:outline-none min-h-[300px] max-md:min-h-[180px] px-1',
         spellcheck: 'true',
       },
+      // On mobile we scroll the note pane ourselves (keyboard-aware).
       handleScrollToSelection: () => !window.matchMedia('(max-width: 767px)').matches,
       handleDrop: (view, event, _slice, moved) => {
         // Internal drags (e.g. repositioning an image) must not create new attachments.
@@ -180,7 +184,11 @@ export function RichTextEditor({
         return true;
       },
     },
-    onUpdate: ({ editor: ed }) => onUpdate(ed.getHTML()),
+    onUpdate: ({ editor: ed }) => {
+      const html = ed.getHTML();
+      lastEmittedHtmlRef.current = html;
+      onUpdate(html);
+    },
   });
 
   editorRef.current = editor;
@@ -191,11 +199,48 @@ export function RichTextEditor({
 
   useEffect(() => {
     if (!editor) return;
-    const current = editor.getHTML();
-    if (current !== content) {
+
+    if (prevNoteIdRef.current !== noteId) {
+      prevNoteIdRef.current = noteId;
+      lastEmittedHtmlRef.current = null;
       editor.commands.setContent(content || '', { emitUpdate: false });
+      return;
+    }
+
+    if (content === lastEmittedHtmlRef.current || content === editor.getHTML()) {
+      return;
+    }
+
+    const scrollEl = editor.view.dom.closest('.mobile-editor-scroll') as HTMLElement | null;
+    const scrollTop = scrollEl?.scrollTop ?? null;
+
+    editor.commands.setContent(content || '', { emitUpdate: false });
+
+    if (scrollEl && scrollTop !== null) {
+      requestAnimationFrame(() => {
+        scrollEl.scrollTop = scrollTop;
+      });
     }
   }, [noteId, content, editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+
+    let raf = 0;
+    const scheduleScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => scrollMobileSelectionIntoView(editor));
+    };
+
+    editor.on('selectionUpdate', scheduleScroll);
+    editor.on('focus', scheduleScroll);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      editor.off('selectionUpdate', scheduleScroll);
+      editor.off('focus', scheduleScroll);
+    };
+  }, [editor]);
 
   const applyLink = (rawUrl: string) => {
     if (!editor) return;

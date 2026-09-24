@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { useMobileKeyboardInset } from '../hooks/useMobileKeyboardInset';
 import { Trash2, Pin, FileCode2, Maximize2, X, File, Download, Copy, Archive, ChevronLeft, MoreVertical } from 'lucide-react';
 import { OverflowMenu } from './OverflowMenu';
 import { useStore } from '../store/useStore';
@@ -53,7 +54,10 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
   const fileInputRef = useRef<HTMLInputElement>(null);
   const richEditorRef = useRef<TiptapEditor | null>(null);
   const mobileOverflowRef = useRef<HTMLButtonElement>(null);
+  const editorScrollRef = useRef<HTMLDivElement>(null);
   const [mobileOverflowOpen, setMobileOverflowOpen] = useState(false);
+  const isMobileEditorLayout = Boolean(onMobileBack && !compact);
+  useMobileKeyboardInset(editorScrollRef, isMobileEditorLayout, activeNoteId);
 
   const note = notes.find((n) => n.id === activeNoteId);
   const folder = note ? folders.find((f) => f.id === note.folderId) : null;
@@ -173,7 +177,7 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
   }
 
   const padding = compact ? 'px-4' : onMobileBack ? 'px-4 md:px-8' : 'px-8';
-  const isMobileEditor = Boolean(onMobileBack && !compact);
+  const isMobileEditor = isMobileEditorLayout;
 
   const mobileOverflowItems = [
     {
@@ -348,6 +352,7 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
       )}
 
       <div
+        ref={editorScrollRef}
         className={`flex-1 overflow-y-auto mobile-editor-scroll ${padding} py-2 md:py-3 flex flex-col min-h-0 max-md:overflow-x-hidden`}
         onDragOver={(e) => {
           if (isMarkdown) e.preventDefault();
