@@ -5,6 +5,7 @@ import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, DEFAULT_FOLDERS_SECTION_NAME, isFolder
 import { htmlToMarkdown, markdownToHtml } from '../utils/markdown';
 import { dndLog } from '../utils/dndDebug';
 import { isSyncAvailable, pullCloudData, pushCloudData, subscribeCloudChanges } from '../sync/cloudSync';
+import { formatSyncError } from '../sync/syncUtils';
 import { emptySyncPayload, mergeSyncPayloads } from '../sync/mergeSync';
 import type { SyncPayload, SyncStatus } from '../sync/types';
 import { useAuthStore } from './authStore';
@@ -144,10 +145,18 @@ let unsubscribeCloud: (() => void) | null = null;
 
 let cloudPullInterval: ReturnType<typeof setInterval> | null = null;
 
+let cloudPushInFlight: Promise<void> | null = null;
+
+let lastPushFailAt = 0;
+let lastFailedPayloadJson: string | null = null;
+const PUSH_RETRY_MS = 30_000;
+
 function resetCloudSyncTracking() {
   lastCloudPushAt = 0;
   lastKnownCloudUpdatedAt = 0;
   lastPushedPayloadJson = null;
+  lastPushFailAt = 0;
+  lastFailedPayloadJson = null;
 }
 
 function markCloudApplied(updatedAt: string) {
@@ -336,14 +345,31 @@ export const useStore = create<Store>((set, get) => ({
 
     try {
       const cloud = await pullCloudData(userId);
-      if (!cloud) return;
+      if (!cloud) {
+        set({ syncStatus: 'synced', syncError: null });
+        return;
+      }
 
       const cloudTime = new Date(cloud.updatedAt).getTime();
-      if (cloudTime <= lastKnownCloudUpdatedAt) return;
+      const current = get();
+      const localPayload = getSyncPayload(current);
+      const merged = mergeSyncPayloads(localPayload, cloud.payload);
+      const unchanged = JSON.stringify(localPayload) === JSON.stringify(merged);
+
+      if (unchanged && cloudTime <= lastKnownCloudUpdatedAt) {
+        set({ syncStatus: 'synced', syncError: null });
+        return;
+      }
+
+      if (unchanged) {
+        markCloudApplied(cloud.updatedAt);
+        lastPushFailAt = 0;
+        lastFailedPayloadJson = null;
+        set({ syncStatus: 'synced', syncError: null });
+        return;
+      }
 
       skipCloudPush = true;
-      const current = get();
-      const merged = mergeSyncPayloads(getSyncPayload(current), cloud.payload);
       set({
         ...migrateData({
           ...getPersistableData(current),
@@ -354,13 +380,17 @@ export const useStore = create<Store>((set, get) => ({
       });
       skipCloudPush = false;
       markCloudApplied(cloud.updatedAt);
+      lastPushFailAt = 0;
+      lastFailedPayloadJson = null;
       await get().persistLocal();
+      void get().persist();
     } catch (err) {
       console.error('Remote sync failed:', err);
       set({
         syncStatus: 'error',
-        syncError: err instanceof Error ? err.message : 'Remote sync failed',
+        syncError: formatSyncError(err),
       });
+      throw err;
     }
   },
 
@@ -395,7 +425,7 @@ export const useStore = create<Store>((set, get) => ({
           console.error('Remote sync failed:', err);
           set({
             syncStatus: 'error',
-            syncError: err instanceof Error ? err.message : 'Remote sync failed',
+            syncError: formatSyncError(err),
           });
         }
       })();
@@ -465,7 +495,7 @@ export const useStore = create<Store>((set, get) => ({
           if (!isStale()) {
             set({
               syncStatus: 'error',
-              syncError: err instanceof Error ? err.message : 'Sync failed',
+              syncError: formatSyncError(err),
             });
           }
         }
@@ -586,18 +616,40 @@ export const useStore = create<Store>((set, get) => ({
     const payloadJson = JSON.stringify(payload);
     if (payloadJson === lastPushedPayloadJson) return;
 
-    set({ syncStatus: 'syncing' });
-    try {
-      const updatedAt = await pushCloudData(userId, payload);
-      markCloudPushed(updatedAt, payload);
-      set({ syncStatus: 'synced', syncError: null });
-    } catch (err) {
-      console.error('Cloud push failed:', err);
-      set({
-        syncStatus: 'error',
-        syncError: err instanceof Error ? err.message : 'Sync failed',
-      });
+    if (
+      payloadJson === lastFailedPayloadJson &&
+      Date.now() - lastPushFailAt < PUSH_RETRY_MS
+    ) {
+      return;
     }
+
+    if (cloudPushInFlight) {
+      await cloudPushInFlight;
+      return;
+    }
+
+    cloudPushInFlight = (async () => {
+      set({ syncStatus: 'syncing', syncError: null });
+      try {
+        const updatedAt = await pushCloudData(userId, payload);
+        markCloudPushed(updatedAt, payload);
+        lastPushFailAt = 0;
+        lastFailedPayloadJson = null;
+        set({ syncStatus: 'synced', syncError: null });
+      } catch (err) {
+        console.error('Cloud push failed:', err);
+        lastPushFailAt = Date.now();
+        lastFailedPayloadJson = payloadJson;
+        set({
+          syncStatus: 'error',
+          syncError: formatSyncError(err),
+        });
+      } finally {
+        cloudPushInFlight = null;
+      }
+    })();
+
+    await cloudPushInFlight;
   },
 
   flushPersist: async () => {

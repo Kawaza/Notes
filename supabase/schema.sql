@@ -21,5 +21,11 @@ create policy "Users update own sync data"
   on public.user_sync_data for update
   using (auth.uid() = user_id);
 
+-- Optional: if upsert still fails with RLS errors, replace insert/update policies with:
+-- create policy "Users manage own sync data"
+--   on public.user_sync_data for all
+--   using (auth.uid() = user_id)
+--   with check (auth.uid() = user_id);
+
 -- Enable Realtime (step 1.3): run this in SQL Editor, OR use Database → Publications → supabase_realtime
 alter publication supabase_realtime add table public.user_sync_data;

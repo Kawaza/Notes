@@ -3,6 +3,14 @@ import { Cloud, Loader2, LogOut, RefreshCw, Upload } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useStore } from '../store/useStore';
 import { isSupabaseConfigured } from '../sync/supabaseClient';
+import type { SyncStatus } from '../sync/types';
+
+function syncLabel(status: SyncStatus, error: string | null): string {
+  if (status === 'syncing') return 'Syncing…';
+  if (status === 'synced') return 'Synced';
+  if (status === 'error') return error ? 'Sync error' : 'Sync error';
+  return 'Offline';
+}
 
 export function SyncAccountSection() {
   const user = useAuthStore((s) => s.user);
@@ -87,15 +95,6 @@ export function SyncAccountSection() {
     }
   };
 
-  const statusLabel =
-    syncStatus === 'syncing'
-      ? 'Syncing…'
-      : syncStatus === 'synced'
-        ? 'Synced'
-        : syncStatus === 'error'
-          ? 'Sync error'
-          : 'Offline';
-
   return (
     <section>
       <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
@@ -106,9 +105,11 @@ export function SyncAccountSection() {
         <div className="space-y-3">
           <p className="text-sm">{user.email}</p>
           <p className="text-xs text-muted-foreground">
-            Status: {statusLabel}
-            {syncError ? ` — ${syncError}` : ''}
+            Status: {syncLabel(syncStatus, syncError)}
           </p>
+          {syncError && syncStatus === 'error' && (
+            <p className="text-xs text-destructive leading-relaxed">{syncError}</p>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <button

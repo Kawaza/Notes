@@ -1,6 +1,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import type { SyncPayload } from './types';
+import { assertSyncPayloadSize, ensureFreshSession } from './syncUtils';
 
 export function isSyncAvailable(): boolean {
   return isSupabaseConfigured() && supabase !== null;
@@ -10,6 +11,8 @@ export async function pullCloudData(
   userId: string,
 ): Promise<{ payload: SyncPayload; updatedAt: string } | null> {
   if (!supabase) return null;
+
+  await ensureFreshSession();
 
   const { data, error } = await supabase
     .from('user_sync_data')
@@ -29,12 +32,18 @@ export async function pullCloudData(
 export async function pushCloudData(userId: string, payload: SyncPayload): Promise<string> {
   if (!supabase) throw new Error('Sync is not configured');
 
+  await ensureFreshSession();
+  assertSyncPayloadSize(payload);
+
   const updatedAt = new Date().toISOString();
-  const { error } = await supabase.from('user_sync_data').upsert({
-    user_id: userId,
-    data: payload,
-    updated_at: updatedAt,
-  });
+  const { error } = await supabase.from('user_sync_data').upsert(
+    {
+      user_id: userId,
+      data: payload,
+      updated_at: updatedAt,
+    },
+    { onConflict: 'user_id' },
+  );
 
   if (error) throw error;
   return updatedAt;
