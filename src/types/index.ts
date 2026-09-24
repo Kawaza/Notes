@@ -128,9 +128,17 @@ export function notesInFolder(notes: Note[], folderId: string | null): Note[] {
     : notes.filter((n) => !n.folderId);
 }
 
+/** Tombstone so deletes sync across devices (merge would otherwise restore removed notes). */
+export interface NoteDeletion {
+  id: string;
+  deletedAt: string;
+}
+
 export interface AppData {
   folders: Folder[];
   notes: Note[];
+  /** Note ids deleted locally/cloud — kept until all clients have merged. */
+  noteDeletions?: NoteDeletion[];
   folderLinks: FolderLink[];
   folderSecrets: FolderSecret[];
   theme: Theme;

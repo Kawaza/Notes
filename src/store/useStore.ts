@@ -13,6 +13,7 @@ import { useAuthStore } from './authStore';
 const defaultData: AppData = {
   folders: [],
   notes: [],
+  noteDeletions: [],
   folderLinks: [],
   folderSecrets: [],
   theme: 'light',
@@ -112,6 +113,7 @@ function getPersistableData(state: Store): AppData {
   return {
     folders: state.folders,
     notes: state.notes,
+    noteDeletions: state.noteDeletions ?? [],
     folderLinks: state.folderLinks,
     folderSecrets: state.folderSecrets,
     theme: state.theme,
@@ -179,6 +181,7 @@ function getSyncPayload(state: Store): SyncPayload {
   return {
     folders: state.folders,
     notes: state.notes,
+    noteDeletions: state.noteDeletions ?? [],
     folderLinks: state.folderLinks,
     folderSecrets: state.folderSecrets,
     theme: state.theme,
@@ -308,6 +311,10 @@ function migrateData(data: Partial<AppData>): AppData {
     notes,
     folderLinks,
     folderSecrets: data.folderSecrets ?? [],
+    noteDeletions: (data.noteDeletions ?? []).filter(
+      (d): d is { id: string; deletedAt: string } =>
+        Boolean(d && typeof d.id === 'string' && typeof d.deletedAt === 'string'),
+    ),
     colorPalette: (() => {
       const raw = data.colorPalette as string | undefined;
       if (raw === 'mono') return 'default';
@@ -938,10 +945,19 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   deleteNote: (id) => {
-    set((s) => ({
-      notes: s.notes.filter((n) => n.id !== id),
-      selectedNoteId: s.selectedNoteId === id ? null : s.selectedNoteId,
-    }));
+    const deletedAt = new Date().toISOString();
+    set((s) => {
+      const noteDeletions = [...(s.noteDeletions ?? [])];
+      const existing = noteDeletions.findIndex((d) => d.id === id);
+      if (existing >= 0) noteDeletions[existing] = { id, deletedAt };
+      else noteDeletions.push({ id, deletedAt });
+
+      return {
+        notes: s.notes.filter((n) => n.id !== id),
+        noteDeletions,
+        selectedNoteId: s.selectedNoteId === id ? null : s.selectedNoteId,
+      };
+    });
     scheduleSave(get);
   },
 

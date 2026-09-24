@@ -1,9 +1,18 @@
-import type { ColorPalette, Folder, FolderLink, FolderSecret, Note, Theme } from '../types';
+import type {
+  ColorPalette,
+  Folder,
+  FolderLink,
+  FolderSecret,
+  Note,
+  NoteDeletion,
+  Theme,
+} from '../types';
 
 /** Data synced across devices (UI selection stays local per device). */
 export interface SyncPayload {
   folders: Folder[];
   notes: Note[];
+  noteDeletions: NoteDeletion[];
   folderLinks: FolderLink[];
   folderSecrets: FolderSecret[];
   theme: Theme;
