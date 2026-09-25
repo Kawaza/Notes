@@ -678,7 +678,12 @@ html {
   .mobile-editor-scroll {
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
+    overflow-anchor: none;
     scroll-padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-editor-scroll .ProseMirror {
+    overflow-anchor: none;
   }
 
   .prose-editor ul[data-type="taskList"] li > label {

@@ -26,7 +26,11 @@ import type { NoteAttachment } from '../types';
 import { LinkDialog } from './LinkDialog';
 import { NoteImage } from './NoteImageExtension';
 import {
+  captureMobileEditorScroll,
   createMobileEditorScrollGuard,
+  isKeyboardLikelyOpen,
+  isTaskCheckboxLabelTarget,
+  restoreMobileEditorScroll,
   scrollMobileSelectionIntoView,
 } from '../utils/mobileEditorScroll';
 import { editorHtmlEquivalent } from '../utils/editorHtml';
@@ -94,6 +98,7 @@ export function RichTextEditor({
   const editorRef = useRef<Editor | null>(null);
   const lastEmittedHtmlRef = useRef<string | null>(null);
   const suppressExternalSyncUntilRef = useRef(0);
+  const mobileTaskScrollHoldRef = useRef<ReturnType<typeof captureMobileEditorScroll>>(null);
   const prevNoteIdRef = useRef(noteId);
 
   const insertImageFile = useCallback(
@@ -170,13 +175,19 @@ export function RichTextEditor({
       // On mobile we scroll the note pane ourselves (keyboard-aware).
       handleScrollToSelection: () => !window.matchMedia('(max-width: 767px)').matches,
       handleDOMEvents: {
-        focus: (_view, event) => {
-          const target = event.target as HTMLElement | null;
-          if (
-            window.matchMedia('(max-width: 767px)').matches &&
-            target?.matches('input[type="checkbox"]')
-          ) {
-            target.blur();
+        touchstart: (view, event) => {
+          if (!isTaskCheckboxLabelTarget(event.target)) return false;
+          mobileTaskScrollHoldRef.current = captureMobileEditorScroll(view.dom);
+          if (!isKeyboardLikelyOpen()) {
+            event.preventDefault();
+          }
+          return false;
+        },
+        mousedown: (view, event) => {
+          if (!isTaskCheckboxLabelTarget(event.target)) return false;
+          mobileTaskScrollHoldRef.current = captureMobileEditorScroll(view.dom);
+          if (!isKeyboardLikelyOpen()) {
+            event.preventDefault();
           }
           return false;
         },
@@ -255,18 +266,29 @@ export function RichTextEditor({
     const scrollEl = editor.view.dom.closest('.mobile-editor-scroll') as HTMLElement | null;
     const guard = createMobileEditorScrollGuard(scrollEl);
 
+    const onTransaction = ({ transaction }: { transaction: { docChanged: boolean } }) => {
+      const hold = mobileTaskScrollHoldRef.current;
+      if (!hold || !transaction.docChanged) return;
+      mobileTaskScrollHoldRef.current = null;
+      if (isKeyboardLikelyOpen()) return;
+      restoreMobileEditorScroll(editor.view.dom, hold, { blurFocus: true });
+    };
+
     let raf = 0;
     const scheduleScroll = () => {
       if (guard.shouldSkipAutoScroll()) return;
+      if (!isKeyboardLikelyOpen()) return;
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => scrollMobileSelectionIntoView(editor));
     };
 
+    editor.on('transaction', onTransaction);
     editor.on('focus', scheduleScroll);
 
     return () => {
       cancelAnimationFrame(raf);
       guard.dispose();
+      editor.off('transaction', onTransaction);
       editor.off('focus', scheduleScroll);
     };
   }, [editor]);

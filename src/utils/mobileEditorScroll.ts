@@ -10,7 +10,7 @@ export function getMobileEditorScrollEl(editor: Editor): HTMLElement | null {
   return editor.view.dom.closest('.mobile-editor-scroll') as HTMLElement | null;
 }
 
-function isKeyboardLikelyOpen(): boolean {
+export function isKeyboardLikelyOpen(): boolean {
   const vv = window.visualViewport;
   if (!vv) return false;
   return vv.height < window.innerHeight * 0.85;
@@ -38,6 +38,49 @@ export function scrollMobileSelectionIntoView(editor: Editor) {
   if (coords.bottom > visibleBottom) {
     scrollEl.scrollTop += coords.bottom - visibleBottom;
   }
+}
+
+export interface MobileScrollSnapshot {
+  scrollTop: number;
+  windowY: number;
+}
+
+export function captureMobileEditorScroll(dom: HTMLElement): MobileScrollSnapshot | null {
+  if (!isMobileEditorViewport()) return null;
+  const scrollEl = dom.closest('.mobile-editor-scroll') as HTMLElement | null;
+  return {
+    scrollTop: scrollEl?.scrollTop ?? 0,
+    windowY: window.scrollY,
+  };
+}
+
+export function restoreMobileEditorScroll(
+  dom: HTMLElement,
+  snapshot: MobileScrollSnapshot,
+  options?: { blurFocus?: boolean },
+) {
+  if (!isMobileEditorViewport()) return;
+
+  const apply = () => {
+    const scrollEl = dom.closest('.mobile-editor-scroll') as HTMLElement | null;
+    if (scrollEl) scrollEl.scrollTop = snapshot.scrollTop;
+    if (window.scrollY !== snapshot.windowY) window.scrollTo(0, snapshot.windowY);
+  };
+
+  if (options?.blurFocus && !isKeyboardLikelyOpen()) {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body) {
+      active.blur();
+    }
+  }
+
+  apply();
+  requestAnimationFrame(apply);
+}
+
+export function isTaskCheckboxLabelTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest('ul[data-type="taskList"] li > label'));
 }
 
 export function createMobileEditorScrollGuard(scrollEl: HTMLElement | null) {
