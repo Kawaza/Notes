@@ -25,7 +25,10 @@ import {
 import type { NoteAttachment } from '../types';
 import { LinkDialog } from './LinkDialog';
 import { NoteImage } from './NoteImageExtension';
-import { scrollMobileSelectionIntoView } from '../utils/mobileEditorScroll';
+import {
+  createMobileEditorScrollGuard,
+  scrollMobileSelectionIntoView,
+} from '../utils/mobileEditorScroll';
 import { editorHtmlEquivalent } from '../utils/editorHtml';
 
 const lowlight = createLowlight(common);
@@ -92,22 +95,6 @@ export function RichTextEditor({
   const lastEmittedHtmlRef = useRef<string | null>(null);
   const suppressExternalSyncUntilRef = useRef(0);
   const prevNoteIdRef = useRef(noteId);
-
-  const lockMobileEditorScrollFromDom = (dom: HTMLElement) => {
-    if (!window.matchMedia('(max-width: 767px)').matches) return;
-    const scrollEl = dom.closest('.mobile-editor-scroll') as HTMLElement | null;
-    const scrollTop = scrollEl?.scrollTop ?? 0;
-    const windowY = window.scrollY;
-    const restore = () => {
-      if (scrollEl) scrollEl.scrollTop = scrollTop;
-      if (window.scrollY !== windowY) window.scrollTo(0, windowY);
-    };
-    restore();
-    requestAnimationFrame(restore);
-    window.setTimeout(restore, 0);
-    window.setTimeout(restore, 50);
-    window.setTimeout(restore, 120);
-  };
 
   const insertImageFile = useCallback(
     async (
@@ -183,26 +170,13 @@ export function RichTextEditor({
       // On mobile we scroll the note pane ourselves (keyboard-aware).
       handleScrollToSelection: () => !window.matchMedia('(max-width: 767px)').matches,
       handleDOMEvents: {
-        mousedown: (view, event) => {
-          const target = event.target as HTMLElement | null;
-          if (!target?.closest('ul[data-type="taskList"]')) return false;
-          lockMobileEditorScrollFromDom(view.dom);
-          return false;
-        },
-        touchstart: (view, event) => {
-          const target = event.target as HTMLElement | null;
-          if (!target?.closest('ul[data-type="taskList"]')) return false;
-          lockMobileEditorScrollFromDom(view.dom);
-          return false;
-        },
-        focus: (view, event) => {
+        focus: (_view, event) => {
           const target = event.target as HTMLElement | null;
           if (
             window.matchMedia('(max-width: 767px)').matches &&
             target?.matches('input[type="checkbox"]')
           ) {
             target.blur();
-            lockMobileEditorScrollFromDom(view.dom);
           }
           return false;
         },
@@ -232,7 +206,6 @@ export function RichTextEditor({
       lastEmittedHtmlRef.current = html;
       suppressExternalSyncUntilRef.current = Date.now() + 800;
       onUpdate(html);
-      lockMobileEditorScrollFromDom(ed.view.dom);
     },
   });
 
@@ -266,37 +239,34 @@ export function RichTextEditor({
 
     const scrollEl = editor.view.dom.closest('.mobile-editor-scroll') as HTMLElement | null;
     const scrollTop = scrollEl?.scrollTop ?? null;
-    const windowY = window.scrollY;
 
     editor.commands.setContent(content || '', { emitUpdate: false });
 
     if (scrollEl && scrollTop !== null) {
-      const restore = () => {
+      requestAnimationFrame(() => {
         scrollEl.scrollTop = scrollTop;
-        if (window.scrollY !== windowY) window.scrollTo(0, windowY);
-      };
-      restore();
-      requestAnimationFrame(restore);
-      window.setTimeout(restore, 0);
-      window.setTimeout(restore, 50);
+      });
     }
   }, [noteId, content, editor]);
 
   useEffect(() => {
     if (!editor) return;
 
+    const scrollEl = editor.view.dom.closest('.mobile-editor-scroll') as HTMLElement | null;
+    const guard = createMobileEditorScrollGuard(scrollEl);
+
     let raf = 0;
     const scheduleScroll = () => {
+      if (guard.shouldSkipAutoScroll()) return;
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => scrollMobileSelectionIntoView(editor));
     };
 
-    editor.on('selectionUpdate', scheduleScroll);
     editor.on('focus', scheduleScroll);
 
     return () => {
       cancelAnimationFrame(raf);
-      editor.off('selectionUpdate', scheduleScroll);
+      guard.dispose();
       editor.off('focus', scheduleScroll);
     };
   }, [editor]);
