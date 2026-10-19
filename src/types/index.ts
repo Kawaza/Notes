@@ -149,6 +149,8 @@ export interface AppData {
   selectedTag: string | null;
   /** Sidebar label for the root folders section (default: "Folders"). */
   foldersSectionName: string;
+  /** When true, landscape on touch devices shows only the open note (hide note list). */
+  mobileLandscapeFocus?: boolean;
 }
 
 export interface NoteTemplate {

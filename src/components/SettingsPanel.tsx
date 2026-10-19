@@ -1,5 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
-import { Download, Upload, X, Palette, Sun, Moon } from 'lucide-react';
+import { Download, Upload, X, Palette, Sun, Moon, Smartphone } from 'lucide-react';
+import { useIsCoarsePointer } from '../hooks/useOrientation';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { useStore } from '../store/useStore';
 import { COLOR_PALETTES } from '../constants/palettes';
 import {
@@ -37,6 +39,11 @@ export function SettingsPanel({
   const setColorPalette = useStore((s) => s.setColorPalette);
   const importData = useStore((s) => s.importData);
   const createNoteFromImport = useStore((s) => s.createNoteFromImport);
+  const mobileLandscapeFocus = useStore((s) => s.mobileLandscapeFocus);
+  const setMobileLandscapeFocus = useStore((s) => s.setMobileLandscapeFocus);
+  const isMobile = useIsMobile();
+  const isCoarsePointer = useIsCoarsePointer();
+  const showMobileSettings = isMobile || isCoarsePointer;
 
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const mdInputRef = useRef<HTMLInputElement>(null);
@@ -156,6 +163,29 @@ export function SettingsPanel({
               ))}
             </div>
           </section>
+
+          {showMobileSettings && (
+            <section>
+              <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+                <Smartphone size={14} /> Mobile
+              </h3>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={mobileLandscapeFocus}
+                  onChange={(e) => setMobileLandscapeFocus(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-border accent-primary"
+                />
+                <span className="text-sm leading-snug">
+                  Landscape focus mode
+                  <span className="block text-xs text-muted-foreground mt-1 font-normal">
+                    When your phone is sideways, hide the note list and show only the open note.
+                    Use the menu button to switch notes.
+                  </span>
+                </span>
+              </label>
+            </section>
+          )}
 
           <section>
             <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">

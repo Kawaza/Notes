@@ -648,7 +648,7 @@ function useExpandSectionOnSelect(
   }, [selectedId, sectionIds, setOpen, storageKey]);
 }
 
-export function Sidebar() {
+export function Sidebar({ forceDrawer = false }: { forceDrawer?: boolean } = {}) {
   const [newFolderName, setNewFolderName] = useState('');
   const [newFolderTarget, setNewFolderTarget] = useState<NewFolderTarget | null>(null);
   const [showAddFolderMenu, setShowAddFolderMenu] = useState(false);
@@ -676,6 +676,8 @@ export function Sidebar() {
   const foldersSectionName = useStore((s) => s.foldersSectionName);
   const setFoldersSectionName = useStore((s) => s.setFoldersSectionName);
   const notes = useStore((s) => s.notes);
+  const isMobile = useIsMobile();
+  const useDrawer = isMobile || forceDrawer;
 
   const activeNoteCount = useMemo(
     () =>
@@ -823,9 +825,13 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`flex flex-col w-56 shrink-0 border-r border-border bg-sidebar h-full max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:shadow-xl max-md:transition-transform max-md:duration-200 max-md:ease-out ${
-        mobileNavOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'
-      } md:relative`}
+      className={`flex flex-col w-56 shrink-0 border-r border-border bg-sidebar h-full ${
+        useDrawer
+          ? `fixed inset-y-0 left-0 z-40 shadow-xl transition-transform duration-200 ease-out ${
+              mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
+            }`
+          : 'relative'
+      }`}
     >
       <QuickLinkDialog
         open={!!linkDialog}

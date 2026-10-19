@@ -1,6 +1,19 @@
 import { useCallback, useRef, useState } from 'react';
 import { useMobileKeyboardInset } from '../hooks/useMobileKeyboardInset';
-import { Trash2, Pin, FileCode2, Maximize2, X, File, Download, Copy, Archive, ChevronLeft, MoreVertical } from 'lucide-react';
+import {
+  Trash2,
+  Pin,
+  FileCode2,
+  Maximize2,
+  X,
+  File,
+  Download,
+  Copy,
+  Archive,
+  ChevronLeft,
+  MoreVertical,
+  PanelLeft,
+} from 'lucide-react';
 import { OverflowMenu } from './OverflowMenu';
 import { useStore } from '../store/useStore';
 import { TaskSchedulePanel } from './TaskSchedulePanel';
@@ -23,6 +36,8 @@ interface EditorProps {
   onExpand?: () => void;
   onClose?: () => void;
   onMobileBack?: () => void;
+  onOpenNav?: () => void;
+  landscapeFocus?: boolean;
 }
 
 function isImageAttachment(attachment: NoteAttachment) {
@@ -36,7 +51,15 @@ function downloadAttachment(attachment: NoteAttachment) {
   a.click();
 }
 
-export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobileBack }: EditorProps = {}) {
+export function Editor({
+  noteId: noteIdProp,
+  compact,
+  onExpand,
+  onClose,
+  onMobileBack,
+  onOpenNav,
+  landscapeFocus,
+}: EditorProps = {}) {
   const selectedNoteId = useStore((s) => s.selectedNoteId);
   const selectedFolderId = useStore((s) => s.selectedFolderId);
   const activeNoteId = noteIdProp ?? selectedNoteId;
@@ -56,7 +79,7 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
   const mobileOverflowRef = useRef<HTMLButtonElement>(null);
   const editorScrollRef = useRef<HTMLDivElement>(null);
   const [mobileOverflowOpen, setMobileOverflowOpen] = useState(false);
-  const isMobileEditorLayout = Boolean(onMobileBack && !compact);
+  const isMobileEditorLayout = Boolean((onMobileBack || landscapeFocus) && !compact);
   useMobileKeyboardInset(editorScrollRef, isMobileEditorLayout, activeNoteId);
 
   const note = notes.find((n) => n.id === activeNoteId);
@@ -221,14 +244,25 @@ export function Editor({ noteId: noteIdProp, compact, onExpand, onClose, onMobil
       {isMobileEditor ? (
         <div className="shrink-0 border-b border-border">
           <div className="flex items-start gap-1 px-3 py-2.5 max-w-full">
-            <button
-              type="button"
-              onClick={onMobileBack}
-              className="p-2 -ml-1 mt-0.5 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer shrink-0"
-              aria-label="Back to notes"
-            >
-              <ChevronLeft size={20} />
-            </button>
+            {landscapeFocus ? (
+              <button
+                type="button"
+                onClick={onOpenNav}
+                className="p-2 -ml-1 mt-0.5 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer shrink-0"
+                aria-label="Open menu"
+              >
+                <PanelLeft size={20} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onMobileBack}
+                className="p-2 -ml-1 mt-0.5 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer shrink-0"
+                aria-label="Back to notes"
+              >
+                <ChevronLeft size={20} />
+              </button>
+            )}
             <div className="flex-1 min-w-0 pt-0.5">
               {folder && (
                 <p className="text-[11px] text-muted-foreground truncate mb-0.5">{folder.name}</p>

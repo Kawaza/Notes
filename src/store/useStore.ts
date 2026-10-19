@@ -23,6 +23,7 @@ const defaultData: AppData = {
   viewMode: 'notes',
   selectedTag: null,
   foldersSectionName: DEFAULT_FOLDERS_SECTION_NAME,
+  mobileLandscapeFocus: false,
 };
 
 interface Store extends AppData {
@@ -55,6 +56,7 @@ interface Store extends AppData {
   setSettingsOpen: (open: boolean) => void;
   setMobileNavOpen: (open: boolean) => void;
   closeMobileNav: () => void;
+  setMobileLandscapeFocus: (enabled: boolean) => void;
   createFolder: (
     name: string,
     options?: { parentId?: string | null; isParent?: boolean },
@@ -123,6 +125,7 @@ function getPersistableData(state: Store): AppData {
     viewMode: state.viewMode,
     selectedTag: state.selectedTag,
     foldersSectionName: state.foldersSectionName,
+    mobileLandscapeFocus: state.mobileLandscapeFocus ?? false,
   };
 }
 
@@ -326,6 +329,7 @@ function migrateData(data: Partial<AppData>): AppData {
         ? ALL_NOTES_ID
         : selectedFolderId,
     foldersSectionName: data.foldersSectionName?.trim() || DEFAULT_FOLDERS_SECTION_NAME,
+    mobileLandscapeFocus: data.mobileLandscapeFocus ?? false,
   };
 }
 
@@ -713,6 +717,12 @@ export const useStore = create<Store>((set, get) => ({
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setMobileNavOpen: (mobileNavOpen) => set({ mobileNavOpen }),
   closeMobileNav: () => set({ mobileNavOpen: false }),
+
+  setMobileLandscapeFocus: (mobileLandscapeFocus) => {
+    set({ mobileLandscapeFocus });
+    scheduleSave(get);
+  },
+
   requestFolderDialog: (type) => set({ folderDialogRequest: type }),
   clearFolderDialogRequest: () => set({ folderDialogRequest: null }),
 

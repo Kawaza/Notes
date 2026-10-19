@@ -44,6 +44,7 @@ import {
   parentIdFromDropId,
 } from './types';
 import { useIsMobile } from './hooks/useIsMobile';
+import { useIsCoarsePointer, useIsLandscape } from './hooks/useOrientation';
 import { useAuthStore } from './store/authStore';
 import { useCloudSync } from './hooks/useCloudSync';
 import { AuthScreen } from './components/AuthScreen';
@@ -81,12 +82,19 @@ export default function App() {
   const selectedFolderId = useStore((s) => s.selectedFolderId);
   const selectedNoteId = useStore((s) => s.selectedNoteId);
   const mobileNavOpen = useStore((s) => s.mobileNavOpen);
-  const setMobileNavOpen = useStore((s) => s.setMobileNavOpen);
   const selectNote = useStore((s) => s.selectNote);
   const createNote = useStore((s) => s.createNote);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
+  const setMobileNavOpen = useStore((s) => s.setMobileNavOpen);
+  const mobileLandscapeFocus = useStore((s) => s.mobileLandscapeFocus);
+  const getDisplayedNotes = useStore((s) => s.getDisplayedNotes);
 
   const isMobile = useIsMobile();
+  const isLandscape = useIsLandscape();
+  const isCoarsePointer = useIsCoarsePointer();
+  const landscapeFocusActive =
+    mobileLandscapeFocus && isCoarsePointer && isLandscape;
+  const usePhoneLayout = isMobile || landscapeFocusActive;
   const [mobileFolderPane, setMobileFolderPane] = useState<'notes' | 'overview'>('notes');
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
@@ -95,14 +103,27 @@ export default function App() {
   }, [selectedFolderId]);
 
   const showMobileFolderOverview =
-    isMobile &&
+    usePhoneLayout &&
+    !landscapeFocusActive &&
     viewMode === 'notes' &&
     !selectedNoteId &&
     selectedFolderId !== ALL_NOTES_ID &&
     mobileFolderPane === 'overview';
   const showMobileNoteList =
-    isMobile && viewMode === 'notes' && !selectedNoteId && !showMobileFolderOverview;
-  const showMobileEditor = isMobile && viewMode === 'notes' && !!selectedNoteId;
+    usePhoneLayout &&
+    !landscapeFocusActive &&
+    viewMode === 'notes' &&
+    !selectedNoteId &&
+    !showMobileFolderOverview;
+  const showMobileEditor = usePhoneLayout && viewMode === 'notes' && !!selectedNoteId;
+  const showLandscapePickNote =
+    landscapeFocusActive && viewMode === 'notes' && !selectedNoteId;
+
+  useEffect(() => {
+    if (!landscapeFocusActive || viewMode !== 'notes' || selectedNoteId) return;
+    const notes = getDisplayedNotes();
+    if (notes[0]) selectNote(notes[0].id);
+  }, [landscapeFocusActive, viewMode, selectedNoteId, getDisplayedNotes, selectNote]);
 
   useKeyboardShortcuts();
   useCloudSync();
@@ -446,18 +467,18 @@ export default function App() {
           }}
         />
         <div className="flex flex-1 min-h-0 overflow-hidden relative">
-          {isMobile && mobileNavOpen && (
+          {usePhoneLayout && mobileNavOpen && (
             <button
               type="button"
-              className="fixed inset-0 z-30 bg-black/40 md:hidden"
+              className={`fixed inset-0 z-30 bg-black/40 ${landscapeFocusActive ? '' : 'md:hidden'}`}
               onClick={() => setMobileNavOpen(false)}
               aria-label="Close menu"
             />
           )}
-          <Sidebar />
+          <Sidebar forceDrawer={landscapeFocusActive} />
           {viewMode === 'calendar' ? (
             <CalendarView onOpenNav={() => setMobileNavOpen(true)} />
-          ) : isMobile ? (
+          ) : usePhoneLayout ? (
             <>
               {showMobileNoteList && (
                 <NoteList
@@ -474,10 +495,26 @@ export default function App() {
                   onMobileBack={() => setMobileFolderPane('notes')}
                 />
               )}
+              {showLandscapePickNote && (
+                <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center bg-background">
+                  <p className="text-sm text-muted-foreground max-w-xs">
+                    Turn on a note from the menu, or pick one in the sidebar.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setMobileNavOpen(true)}
+                    className="rounded-lg bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium cursor-pointer"
+                  >
+                    Open menu
+                  </button>
+                </div>
+              )}
               {showMobileEditor && (
                 <Editor
                   key={selectedNoteId ?? 'none'}
-                  onMobileBack={() => selectNote(null)}
+                  landscapeFocus={landscapeFocusActive}
+                  onOpenNav={() => setMobileNavOpen(true)}
+                  onMobileBack={landscapeFocusActive ? undefined : () => selectNote(null)}
                 />
               )}
             </>
