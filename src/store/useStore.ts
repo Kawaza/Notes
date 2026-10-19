@@ -6,6 +6,14 @@ import { htmlToMarkdown, markdownToHtml } from '../utils/markdown';
 import { dndLog } from '../utils/dndDebug';
 import { isSyncAvailable, pullCloudData, pushCloudData, subscribeCloudChanges } from '../sync/cloudSync';
 import { formatSyncError, withSyncTimeout } from '../sync/syncUtils';
+import {
+  compactNoteForStorage,
+  compactNotesForSync,
+  hydrateNoteForDisplay,
+} from '../utils/noteImageStorage';
+import { compressImageFile } from '../utils/compressImage';
+import { optimizeNotesForSync } from '../utils/optimizeNotesForSync';
+import { analyzeSyncPayloadSize, MAX_SYNC_BYTES } from '../sync/syncUtils';
 import { emptySyncPayload, mergeSyncPayloads } from '../sync/mergeSync';
 import type { SyncPayload, SyncStatus } from '../sync/types';
 import { useAuthStore } from './authStore';
@@ -114,7 +122,7 @@ interface Store extends AppData {
 function getPersistableData(state: Store): AppData {
   return {
     folders: state.folders,
-    notes: state.notes,
+    notes: state.notes.map(compactNoteForStorage),
     noteDeletions: state.noteDeletions ?? [],
     folderLinks: state.folderLinks,
     folderSecrets: state.folderSecrets,
@@ -183,7 +191,7 @@ function markCloudPushed(updatedAt: string, payload: SyncPayload) {
 function getSyncPayload(state: Store): SyncPayload {
   return {
     folders: state.folders,
-    notes: state.notes,
+    notes: compactNotesForSync(state.notes),
     noteDeletions: state.noteDeletions ?? [],
     folderLinks: state.folderLinks,
     folderSecrets: state.folderSecrets,
@@ -253,7 +261,7 @@ function migrateNote(
 ): Note {
   const scheduledAt = note.scheduledAt || undefined;
   const isTask = note.isTask ?? Boolean(scheduledAt);
-  return {
+  const migrated = {
     contentType: note.contentType ?? 'html',
     tags: note.tags ?? [],
     pinned: note.pinned ?? false,
@@ -264,6 +272,7 @@ function migrateNote(
     scheduledAt,
     isTask,
   };
+  return migrated;
 }
 
 function normalizeNoteFolderId(folderId: string | null | undefined, folderIds: Set<string>): string | null {
@@ -298,10 +307,12 @@ function migrateData(data: Partial<AppData>): AppData {
   const notes = (data.notes ?? [])
     .filter((n): n is Note => Boolean(n && typeof n === 'object' && n.id))
     .map((n) =>
-      migrateNote({
-        ...n,
-        folderId: normalizeNoteFolderId(n.folderId, folderIds),
-      }),
+      hydrateNoteForDisplay(
+        migrateNote({
+          ...n,
+          folderId: normalizeNoteFolderId(n.folderId, folderIds),
+        }),
+      ),
     );
   const folderLinks = (data.folderLinks ?? [])
     .filter((l): l is FolderLink => Boolean(l && typeof l === 'object' && l.id && l.folderId && l.url))
@@ -453,7 +464,13 @@ export const useStore = create<Store>((set, get) => ({
 
           if (cloud && raw) {
             const localPayload = getSyncPayload(migrateData(raw) as Store);
-            const merged = mergeSyncPayloads(localPayload, cloud.payload);
+            let merged = mergeSyncPayloads(localPayload, cloud.payload);
+            if (analyzeSyncPayloadSize(merged).totalBytes > MAX_SYNC_BYTES) {
+              merged = {
+                ...merged,
+                notes: await optimizeNotesForSync(merged.notes),
+              };
+            }
             markCloudApplied(cloud.updatedAt);
             raw = {
               ...(raw ?? defaultData),
@@ -487,8 +504,23 @@ export const useStore = create<Store>((set, get) => ({
       if (isStale()) return;
 
       if (raw) {
-        finishHydrated(migrateData(raw) as Partial<Store>);
-        if (!isStale() && window.electronAPI?.isElectron) {
+        const migrated = migrateData(raw) as Partial<Store>;
+        let notes = migrated.notes ?? [];
+        const sizeProbe = analyzeSyncPayloadSize({
+          folders: migrated.folders ?? [],
+          notes,
+          noteDeletions: migrated.noteDeletions ?? [],
+          folderLinks: migrated.folderLinks ?? [],
+          folderSecrets: migrated.folderSecrets ?? [],
+          theme: migrated.theme ?? 'light',
+          colorPalette: migrated.colorPalette ?? 'default',
+          foldersSectionName: migrated.foldersSectionName ?? 'Folders',
+        });
+        if (sizeProbe.totalBytes > MAX_SYNC_BYTES) {
+          notes = await optimizeNotesForSync(notes);
+        }
+        finishHydrated({ ...migrated, notes });
+        if (!isStale()) {
           await saveLocalRaw(getPersistableData(get()));
         }
         return;
@@ -562,7 +594,13 @@ export const useStore = create<Store>((set, get) => ({
 
     const localPayload = getSyncPayload(migrateData(localRaw) as Store);
     const cloud = await pullCloudData(userId);
-    const merged = mergeSyncPayloads(localPayload, cloud?.payload ?? emptySyncPayload());
+    let merged = mergeSyncPayloads(localPayload, cloud?.payload ?? emptySyncPayload());
+    if (analyzeSyncPayloadSize(merged).totalBytes > MAX_SYNC_BYTES) {
+      merged = {
+        ...merged,
+        notes: await optimizeNotesForSync(merged.notes),
+      };
+    }
 
     skipCloudPush = true;
     const current = get();
@@ -576,8 +614,9 @@ export const useStore = create<Store>((set, get) => ({
     });
     skipCloudPush = false;
 
-    const updatedAt = await pushCloudData(userId, merged);
-    markCloudPushed(updatedAt, merged);
+    const pushedPayload = getSyncPayload(get());
+    const updatedAt = await pushCloudData(userId, pushedPayload);
+    markCloudPushed(updatedAt, pushedPayload);
     await get().persistLocal();
     set({ syncStatus: 'synced', syncError: null });
 
@@ -628,7 +667,7 @@ export const useStore = create<Store>((set, get) => ({
                 }),
               });
               skipCloudPush = false;
-              payloadToPush = merged;
+              payloadToPush = getSyncPayload(get());
               await get().persistLocal();
             }
             const cloudTime = new Date(cloud.updatedAt).getTime();
@@ -638,6 +677,19 @@ export const useStore = create<Store>((set, get) => ({
           }
         } catch (pullErr) {
           console.warn('Pre-push cloud merge skipped:', pullErr);
+        }
+
+        if (analyzeSyncPayloadSize(payloadToPush).totalBytes > MAX_SYNC_BYTES) {
+          const optimized = await optimizeNotesForSync(get().notes);
+          skipCloudPush = true;
+          set({
+            notes: optimized,
+            syncStatus: 'syncing',
+            syncError: null,
+          });
+          skipCloudPush = false;
+          await get().persistLocal();
+          payloadToPush = getSyncPayload(get());
         }
 
         const pushJson = JSON.stringify(payloadToPush);
@@ -1225,16 +1277,12 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   addAttachment: async (noteId, file) => {
-    const dataUrl = await new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.readAsDataURL(file);
-    });
+    const { dataUrl, mimeType } = await compressImageFile(file);
     const attachment = {
       id: uuidv4(),
       name: file.name,
       dataUrl,
-      mimeType: file.type || 'application/octet-stream',
+      mimeType,
     };
     set((s) => ({
       notes: s.notes.map((n) =>

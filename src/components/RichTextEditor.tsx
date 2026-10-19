@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { LightboxImage } from './ImageLightbox';
 import { useEditor, EditorContent } from '@tiptap/react';
 import type { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
@@ -23,6 +24,7 @@ import {
   Pilcrow,
 } from 'lucide-react';
 import type { NoteAttachment } from '../types';
+import { hydrateNoteHtmlContent } from '../utils/noteImageStorage';
 import { LinkDialog } from './LinkDialog';
 import { NoteImage } from './NoteImageExtension';
 import {
@@ -79,6 +81,9 @@ interface RichTextEditorProps {
   onFileClick: () => void;
   onEditorReady?: (editor: Editor) => void;
   compact?: boolean;
+  /** Tap embedded images to preview (mobile); disables drag/select on images. */
+  onPreviewImage?: (image: LightboxImage) => void;
+  attachments?: NoteAttachment[];
 }
 
 export function RichTextEditor({
@@ -89,6 +94,8 @@ export function RichTextEditor({
   onFileClick,
   onEditorReady,
   compact,
+  onPreviewImage,
+  attachments = [],
 }: RichTextEditorProps) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkDialogUrl, setLinkDialogUrl] = useState('');
@@ -100,6 +107,49 @@ export function RichTextEditor({
   const suppressExternalSyncUntilRef = useRef(0);
   const mobileTaskScrollHoldRef = useRef<ReturnType<typeof captureMobileEditorScroll>>(null);
   const prevNoteIdRef = useRef(noteId);
+  const onPreviewImageRef = useRef(onPreviewImage);
+  onPreviewImageRef.current = onPreviewImage;
+  const imageTapRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const imagePreviewTouch = Boolean(onPreviewImage);
+
+  const editorHtml = useMemo(
+    () => hydrateNoteHtmlContent(content, attachments),
+    [content, attachments],
+  );
+
+  const extensions = useMemo(
+    () => [
+      StarterKit.configure({
+        codeBlock: false,
+        heading: { levels: [1, 2] },
+      }),
+      CodeBlockLowlight.configure({ lowlight }),
+      Placeholder.configure({ placeholder: 'Start writing or paste a link...' }),
+      TaskList,
+      TaskItem.configure({ nested: true }),
+      NoteImage.configure({
+        inline: false,
+        allowBase64: true,
+        touchPreview: imagePreviewTouch,
+        HTMLAttributes: {
+          class: 'editor-image',
+          draggable: imagePreviewTouch ? 'false' : 'true',
+        },
+      }),
+      Link.configure({
+        openOnClick: true,
+        autolink: true,
+        linkOnPaste: true,
+        defaultProtocol: 'https',
+        HTMLAttributes: {
+          class: 'note-link',
+          rel: 'noopener noreferrer',
+          target: '_blank',
+        },
+      }),
+    ],
+    [imagePreviewTouch],
+  );
 
   const insertImageFile = useCallback(
     async (
@@ -140,33 +190,8 @@ export function RichTextEditor({
 
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: [
-      StarterKit.configure({
-        codeBlock: false,
-        heading: { levels: [1, 2] },
-      }),
-      CodeBlockLowlight.configure({ lowlight }),
-      Placeholder.configure({ placeholder: 'Start writing or paste a link...' }),
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      NoteImage.configure({
-        inline: false,
-        allowBase64: true,
-        HTMLAttributes: { class: 'editor-image', draggable: 'true' },
-      }),
-      Link.configure({
-        openOnClick: true,
-        autolink: true,
-        linkOnPaste: true,
-        defaultProtocol: 'https',
-        HTMLAttributes: {
-          class: 'note-link',
-          rel: 'noopener noreferrer',
-          target: '_blank',
-        },
-      }),
-    ],
-    content,
+    extensions,
+    content: editorHtml,
     editorProps: {
       attributes: {
         class: 'prose-editor focus:outline-none min-h-[300px] max-md:min-h-[180px] px-1',
@@ -174,14 +199,61 @@ export function RichTextEditor({
       },
       // On mobile we scroll the note pane ourselves (keyboard-aware).
       handleScrollToSelection: () => !window.matchMedia('(max-width: 767px)').matches,
+      handleClickOn(_view, _pos, node, _nodePos, event) {
+        if (!onPreviewImageRef.current || node.type.name !== 'image') return false;
+        event.preventDefault();
+        onPreviewImageRef.current({
+          src: node.attrs.src as string,
+          alt: (node.attrs.alt as string) || 'Note image',
+          attachmentId: (node.attrs.attachmentId as string | null) ?? null,
+        });
+        return true;
+      },
       handleDOMEvents: {
         touchstart: (view, event) => {
-          if (!isTaskCheckboxLabelTarget(event.target)) return false;
+          if (!isTaskCheckboxLabelTarget(event.target)) {
+            if (onPreviewImageRef.current && event.target instanceof Element) {
+              const img = event.target.closest('img.editor-image, .prose-editor img');
+              if (img instanceof HTMLImageElement) {
+                const touch = event.touches[0];
+                if (touch) {
+                  imageTapRef.current = {
+                    x: touch.clientX,
+                    y: touch.clientY,
+                    t: Date.now(),
+                  };
+                }
+              }
+            }
+            return false;
+          }
           mobileTaskScrollHoldRef.current = captureMobileEditorScroll(view.dom);
           if (!isKeyboardLikelyOpen()) {
             event.preventDefault();
           }
           return false;
+        },
+        touchend: (_view, event) => {
+          const pending = imageTapRef.current;
+          imageTapRef.current = null;
+          if (!pending || !onPreviewImageRef.current) return false;
+          const touch = event.changedTouches[0];
+          if (!touch) return false;
+          if (Math.hypot(touch.clientX - pending.x, touch.clientY - pending.y) > 14) {
+            return false;
+          }
+          if (Date.now() - pending.t > 650) return false;
+          const target = event.target;
+          if (!(target instanceof Element)) return false;
+          const img = target.closest('img.editor-image, .prose-editor img');
+          if (!(img instanceof HTMLImageElement)) return false;
+          event.preventDefault();
+          onPreviewImageRef.current({
+            src: img.currentSrc || img.src,
+            alt: img.alt || 'Note image',
+            attachmentId: img.getAttribute('data-attachment-id'),
+          });
+          return true;
         },
         mousedown: (view, event) => {
           if (!isTaskCheckboxLabelTarget(event.target)) return false;
@@ -232,7 +304,7 @@ export function RichTextEditor({
     if (prevNoteIdRef.current !== noteId) {
       prevNoteIdRef.current = noteId;
       lastEmittedHtmlRef.current = null;
-      editor.commands.setContent(content || '', { emitUpdate: false });
+      editor.commands.setContent(editorHtml || '', { emitUpdate: false });
       return;
     }
 
@@ -241,9 +313,9 @@ export function RichTextEditor({
     }
 
     if (
-      content === lastEmittedHtmlRef.current ||
-      editorHtmlEquivalent(content, editor.getHTML()) ||
-      editorHtmlEquivalent(content, lastEmittedHtmlRef.current ?? '')
+      editorHtml === lastEmittedHtmlRef.current ||
+      editorHtmlEquivalent(editorHtml, editor.getHTML()) ||
+      editorHtmlEquivalent(editorHtml, lastEmittedHtmlRef.current ?? '')
     ) {
       return;
     }
@@ -251,14 +323,14 @@ export function RichTextEditor({
     const scrollEl = editor.view.dom.closest('.mobile-editor-scroll') as HTMLElement | null;
     const scrollTop = scrollEl?.scrollTop ?? null;
 
-    editor.commands.setContent(content || '', { emitUpdate: false });
+    editor.commands.setContent(editorHtml || '', { emitUpdate: false });
 
     if (scrollEl && scrollTop !== null) {
       requestAnimationFrame(() => {
         scrollEl.scrollTop = scrollTop;
       });
     }
-  }, [noteId, content, editor]);
+  }, [noteId, editorHtml, editor]);
 
   useEffect(() => {
     if (!editor) return;

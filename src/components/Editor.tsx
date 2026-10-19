@@ -1,5 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 import { useMobileKeyboardInset } from '../hooks/useMobileKeyboardInset';
+import { useIsMobile, usePrefersCoarsePointer } from '../hooks/useIsMobile';
+import { ImageLightbox, useNoteImageLightbox, type LightboxImage } from './ImageLightbox';
+import { IMAGE_SRC_PLACEHOLDER } from '../utils/noteImageStorage';
 import {
   Trash2,
   Pin,
@@ -81,8 +84,30 @@ export function Editor({
   const [mobileOverflowOpen, setMobileOverflowOpen] = useState(false);
   const isMobileEditorLayout = Boolean((onMobileBack || landscapeFocus) && !compact);
   useMobileKeyboardInset(editorScrollRef, isMobileEditorLayout, activeNoteId);
+  const isMobile = useIsMobile();
+  const prefersCoarsePointer = usePrefersCoarsePointer();
+  const imageLightboxEnabled = isMobile || prefersCoarsePointer;
+  const { image: lightboxImage, close: closeLightbox, openImage: openLightbox } =
+    useNoteImageLightbox(editorScrollRef, imageLightboxEnabled);
 
   const note = notes.find((n) => n.id === activeNoteId);
+
+  const openNoteImagePreview = useCallback(
+    (target: LightboxImage) => {
+      let src = target.src;
+      if (
+        note &&
+        target.attachmentId &&
+        (!src || src === IMAGE_SRC_PLACEHOLDER)
+      ) {
+        const att = note.attachments.find((a) => a.id === target.attachmentId);
+        if (att?.dataUrl) src = att.dataUrl;
+      }
+      if (!src || src === IMAGE_SRC_PLACEHOLDER) return;
+      openLightbox({ src, alt: target.alt, attachmentId: target.attachmentId });
+    },
+    [note, openLightbox],
+  );
   const folder = note ? folders.find((f) => f.id === note.folderId) : null;
   const isMarkdown = note?.contentType === 'markdown';
   const canArchive = folder && !isFolderArchived(folder);
@@ -415,6 +440,7 @@ export function Editor({
             key={note.id}
             noteId={note.id}
             content={note.content}
+            attachments={note.attachments}
             onUpdate={handleRichUpdate}
             onAddAttachment={handleAddAttachment}
             onFileClick={() => fileInputRef.current?.click()}
@@ -422,6 +448,9 @@ export function Editor({
               richEditorRef.current = ed;
             }}
             compact={compact}
+            onPreviewImage={
+              imageLightboxEnabled ? openNoteImagePreview : undefined
+            }
           />
         )}
         {!compact && note.attachments.length > 0 && (
@@ -434,7 +463,8 @@ export function Editor({
                     <img
                       src={a.dataUrl}
                       alt={a.name}
-                      className="h-20 w-20 object-cover rounded-lg border border-border"
+                      data-note-image-thumb
+                      className="h-20 w-20 object-cover rounded-lg border border-border max-md:cursor-zoom-in"
                     />
                   ) : (
                     <button
@@ -463,6 +493,9 @@ export function Editor({
       {!compact && <TagInput noteId={note.id} tags={note.tags} />}
       <TaskSchedulePanel note={note} compact={compact} />
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileUpload} />
+      {lightboxImage && (
+        <ImageLightbox image={lightboxImage} onClose={closeLightbox} />
+      )}
     </div>
   );
 }

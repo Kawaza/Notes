@@ -708,6 +708,23 @@ html {
     height: 1.375rem;
   }
 
+  .prose-editor img {
+    cursor: zoom-in;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  .prose-editor img.editor-image {
+    pointer-events: auto;
+  }
+
+  [data-note-image-thumb] {
+    cursor: zoom-in;
+    touch-action: manipulation;
+  }
+
   .calendar-container .fc .fc-toolbar {
     flex-direction: column;
     gap: 0.5rem;
