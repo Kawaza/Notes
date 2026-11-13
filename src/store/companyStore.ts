@@ -772,7 +772,16 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
     const folderId = note.folderId;
     const list = get().notesByFolder[folderId] ?? [];
     const existing = list.find((n) => n.id === note.id);
-    if (existing && existing.updatedAt > note.updatedAt) return;
+    if (existing) {
+      if (existing.updatedAt > note.updatedAt) return;
+      if (
+        existing.updatedAt === note.updatedAt &&
+        existing.title === note.title &&
+        existing.content === note.content
+      ) {
+        return;
+      }
+    }
 
     setWorkspaceNoteServerRevision(note.id, note.updatedAt);
     set((s) => {
@@ -792,7 +801,19 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
     set((s) => {
       const list = s.tasksByFolder[folderId] ?? [];
       const existing = list.find((t) => t.id === task.id);
-      if (existing && existing.updatedAt > task.updatedAt) return s;
+      if (existing) {
+        if (existing.updatedAt > task.updatedAt) return s;
+        if (
+          existing.updatedAt === task.updatedAt &&
+          existing.status === task.status &&
+          existing.assigneeId === task.assigneeId &&
+          existing.title === task.title &&
+          existing.content === task.content &&
+          existing.archived === task.archived
+        ) {
+          return s;
+        }
+      }
 
       const nextList = existing
         ? list.map((t) => (t.id === task.id ? task : t))
