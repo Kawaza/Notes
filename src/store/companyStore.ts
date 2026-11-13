@@ -436,7 +436,10 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
       scheduledEnd: partial.scheduledEnd,
       ...assigneePatch,
     })
-      .then(() => void get().loadMyAssignedTasks())
+      .then((saved) => {
+        get().applyRemoteWorkspaceTask(saved);
+        void get().loadMyAssignedTasks();
+      })
       .catch((err) => {
         console.error(err);
         void get().loadTasksForFolder(folderId!);
@@ -502,7 +505,10 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
       dueAt: nextDue,
       archived: nextArchived,
     })
-      .then(() => void get().loadMyAssignedTasks())
+      .then((saved) => {
+        get().applyRemoteWorkspaceTask(saved);
+        void get().loadMyAssignedTasks();
+      })
       .catch((err) => console.error(err));
   },
 

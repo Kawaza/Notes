@@ -361,6 +361,10 @@ function migrateFolderLink(link: Partial<FolderLink> & Pick<FolderLink, 'id' | '
   };
 }
 
+function isLegacyWelcomeNote(note: Note): boolean {
+  return note.tags?.includes('welcome') === true || note.title === 'Welcome to Notes';
+}
+
 function migrateFolder(folder: Folder): Folder {
   return {
     ...folder,
@@ -376,7 +380,7 @@ function migrateData(data: Partial<AppData>): AppData {
     .filter((f) => f.id !== DEFAULT_FOLDER_ID)
     .map((f) => migrateFolder(f));
   const folderIds = new Set(folders.map((f) => f.id));
-  const notes = (data.notes ?? [])
+  const migratedNotes = (data.notes ?? [])
     .filter((n): n is Note => Boolean(n && typeof n === 'object' && n.id))
     .map((n) =>
       hydrateNoteForDisplay(
@@ -386,6 +390,16 @@ function migrateData(data: Partial<AppData>): AppData {
         }),
       ),
     );
+  const welcomeDropIds = migratedNotes.filter(isLegacyWelcomeNote).map((n) => n.id);
+  const notes = migratedNotes.filter((n) => !isLegacyWelcomeNote(n));
+  const priorDeletions = (data.noteDeletions ?? []).filter(
+    (d): d is { id: string; deletedAt: string } =>
+      Boolean(d && typeof d.id === 'string' && typeof d.deletedAt === 'string'),
+  );
+  const deletionIds = new Set(priorDeletions.map((d) => d.id));
+  const welcomeDeletions = welcomeDropIds
+    .filter((id) => !deletionIds.has(id))
+    .map((id) => ({ id, deletedAt: new Date().toISOString() }));
   const folderLinks = (data.folderLinks ?? [])
     .filter((l): l is FolderLink => Boolean(l && typeof l === 'object' && l.id && l.folderId && l.url))
     .map((l) => migrateFolderLink(l));
@@ -397,10 +411,7 @@ function migrateData(data: Partial<AppData>): AppData {
     notes,
     folderLinks,
     folderSecrets: data.folderSecrets ?? [],
-    noteDeletions: (data.noteDeletions ?? []).filter(
-      (d): d is { id: string; deletedAt: string } =>
-        Boolean(d && typeof d.id === 'string' && typeof d.deletedAt === 'string'),
-    ),
+    noteDeletions: [...priorDeletions, ...welcomeDeletions],
     folderDeletions: (data.folderDeletions ?? []).filter(
       (d): d is { id: string; deletedAt: string } =>
         Boolean(d && typeof d.id === 'string' && typeof d.deletedAt === 'string'),
@@ -657,44 +668,11 @@ export const useStore = create<Store>((set, get) => ({
 
     if (isStale()) return;
 
-    const welcomeFolderId = uuidv4();
-    const welcomeId = uuidv4();
-    const now = new Date().toISOString();
     finishHydrated({
-      folders: [
-        {
-          id: welcomeFolderId,
-          name: 'Notes',
-          order: 0,
-        },
-      ],
-      notes: [
-        migrateNote({
-          id: welcomeId,
-          folderId: welcomeFolderId,
-          title: 'Welcome to Notes',
-          content: `<h1>Welcome to Notes</h1>
-<p>Your personal note-taking app. Here's what you can do:</p>
-<ul>
-<li><strong>Folders</strong> — Organize notes in the sidebar</li>
-<li><strong>Rich editor</strong> — Headings, checklists, code blocks, and images</li>
-<li><strong>Tasks</strong> — Use the Tasks tab inside a folder, or My Tasks in the sidebar</li>
-<li><strong>Calendar</strong> — Drag on the calendar to book time blocks</li>
-<li><strong>Search</strong> — Press Ctrl+K to search everything</li>
-<li><strong>Workspace</strong> — Share company folders when you're signed in</li>
-</ul>
-<p>Press <strong>Ctrl+N</strong> for a new note, <strong>Ctrl+Shift+D</strong> to toggle dark mode.</p>`,
-          contentType: 'html',
-          tags: ['welcome'],
-          pinned: true,
-          createdAt: now,
-          updatedAt: now,
-          isTask: false,
-          order: 0,
-        }),
-      ],
-      selectedFolderId: welcomeFolderId,
-      selectedNoteId: welcomeId,
+      folders: [],
+      notes: [],
+      selectedFolderId: MY_TASKS_ID,
+      selectedNoteId: null,
     });
   },
 

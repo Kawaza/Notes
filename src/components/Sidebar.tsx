@@ -868,8 +868,7 @@ export function Sidebar({ forceDrawer = false }: { forceDrawer?: boolean } = {})
       notes
         .filter((n) => {
           if (!n.pinned) return false;
-          const folder = folders.find((f) => f.id === n.folderId);
-          return !isFolderArchived(folder);
+          return !n.folderId;
         })
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
     [notes, folders],

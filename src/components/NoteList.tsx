@@ -39,6 +39,7 @@ import { MobileNavButton } from './MobileNavButton';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { openExternalUrl } from '../utils/openExternal';
 import { useMyTasksList } from '../hooks/useMyTasksList';
+import { useWorkspaceFolderRealtime } from '../hooks/useWorkspaceFolderRealtime';
 import { findWorkspaceFolder } from '../utils/workspaceFolderTree';
 import { membersWithCurrentUser } from '../utils/companyMembers';
 
@@ -590,8 +591,13 @@ export function NoteList({
   const wsFolderId = parseWorkspaceFolderSelectionId(selectedFolderId)?.folderId;
   const loadFolderContent = useCompanyStore((s) => s.loadFolderContent);
 
+  useWorkspaceFolderRealtime(wsFolderId);
+
   useEffect(() => {
-    if (wsFolderId) void loadFolderContent(wsFolderId);
+    if (!wsFolderId) return;
+    void loadFolderContent(wsFolderId);
+    const id = window.setInterval(() => void loadFolderContent(wsFolderId), 45_000);
+    return () => window.clearInterval(id);
   }, [wsFolderId, loadFolderContent]);
   const wsFolder = wsFolderId ? findWorkspaceFolder(foldersByCompany, wsFolderId) : null;
   const wsFolderArchived = Boolean(wsFolder?.archived);

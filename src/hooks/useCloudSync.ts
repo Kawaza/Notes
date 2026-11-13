@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore';
 import { isSupabaseConfigured } from '../sync/supabaseClient';
 import { useCompanyStore } from '../store/companyStore';
 import { useWorkspaceCompanyRealtime } from './useWorkspaceCompanyRealtime';
+import { parseWorkspaceFolderSelectionId } from '../types/company';
 
 /** Load notes and subscribe to cloud changes when the user signs in. */
 export function useCloudSync() {
@@ -49,6 +50,8 @@ export function useCloudSync() {
       if (now - lastFocusPull.current < 120_000) return;
       lastFocusPull.current = now;
       void pullRemoteSync(userId);
+      const ws = parseWorkspaceFolderSelectionId(useStore.getState().selectedFolderId);
+      if (ws) void useCompanyStore.getState().loadFolderContent(ws.folderId);
     };
 
     const onVisible = () => {
