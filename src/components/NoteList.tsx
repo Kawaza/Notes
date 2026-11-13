@@ -40,6 +40,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { openExternalUrl } from '../utils/openExternal';
 import { useMyTasksList } from '../hooks/useMyTasksList';
 import { findWorkspaceFolder } from '../utils/workspaceFolderTree';
+import { membersWithCurrentUser } from '../utils/companyMembers';
 
 function useDisplayedNotes() {
   const allNotes = useStore((s) => s.notes);
@@ -605,7 +606,14 @@ export function NoteList({
     }
     return null;
   }, [foldersByCompany, wsFolderId]);
-  const workspaceMembers = wsCompanyId ? (membersByCompany[wsCompanyId] ?? []) : [];
+  const workspaceMembers = wsCompanyId
+    ? membersWithCurrentUser(
+        membersByCompany[wsCompanyId] ?? [],
+        wsCompanyId,
+        currentUserId,
+        currentUserProfile,
+      )
+    : [];
   const wsFolderName = useMemo(() => {
     if (!wsFolderId) return null;
     for (const list of Object.values(foldersByCompany)) {

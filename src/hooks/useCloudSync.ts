@@ -3,11 +3,13 @@ import { useAuthStore } from '../store/authStore';
 import { useStore } from '../store/useStore';
 import { isSupabaseConfigured } from '../sync/supabaseClient';
 import { useCompanyStore } from '../store/companyStore';
+import { useWorkspaceCompanyRealtime } from './useWorkspaceCompanyRealtime';
 
 /** Load notes and subscribe to cloud changes when the user signs in. */
 export function useCloudSync() {
   const authLoading = useAuthStore((s) => s.authLoading);
   const userId = useAuthStore((s) => s.user?.id ?? null);
+  useWorkspaceCompanyRealtime(Boolean(userId) && !authLoading);
   const rehydrate = useStore((s) => s.rehydrate);
   const startCloudSync = useStore((s) => s.startCloudSync);
   const stopCloudSync = useStore((s) => s.stopCloudSync);

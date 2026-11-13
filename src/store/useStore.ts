@@ -995,6 +995,19 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   selectNote: (selectedNoteId) => {
+    if (selectedNoteId) {
+      const note = get().notes.find((n) => n.id === selectedNoteId);
+      if (note?.folderId) {
+        set({
+          selectedNoteId,
+          selectedFolderId: note.folderId,
+          viewMode: 'notes',
+          mobileNavOpen: false,
+        });
+        scheduleSave(get);
+        return;
+      }
+    }
     set({ selectedNoteId, viewMode: 'notes', mobileNavOpen: false });
     scheduleSave(get);
   },
@@ -1201,15 +1214,27 @@ export const useStore = create<Store>((set, get) => ({
       if (existing >= 0) folderDeletions[existing] = { id, deletedAt };
       else folderDeletions.push({ id, deletedAt });
 
+      const removedNoteIds = s.notes.filter((n) => n.folderId === id).map((n) => n.id);
+      const noteDeletions = [...(s.noteDeletions ?? [])];
+      for (const noteId of removedNoteIds) {
+        const di = noteDeletions.findIndex((d) => d.id === noteId);
+        if (di >= 0) noteDeletions[di] = { id: noteId, deletedAt };
+        else noteDeletions.push({ id: noteId, deletedAt });
+      }
+
+      const selectedRemoved = removedNoteIds.includes(s.selectedNoteId ?? '');
+
       return {
         folders: s.folders
           .filter((f) => f.id !== id)
           .map((f) => (f.parentId === id ? { ...f, parentId: null } : f)),
-        notes: s.notes.map((n) => (n.folderId === id ? { ...n, folderId: null } : n)),
+        notes: s.notes.filter((n) => n.folderId !== id),
         folderLinks: s.folderLinks.filter((l) => l.folderId !== id),
         folderSecrets: s.folderSecrets.filter((sec) => sec.folderId !== id),
         folderDeletions,
+        noteDeletions,
         selectedFolderId: s.selectedFolderId === id ? MY_TASKS_ID : s.selectedFolderId,
+        selectedNoteId: selectedRemoved ? null : s.selectedNoteId,
       };
     });
     scheduleSave(get);

@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { useAuthStore } from '../store/authStore';
 
 const SESSION_CHECK_MIN_MS = 45_000;
 
@@ -12,20 +13,16 @@ export async function ensureFreshSession(): Promise<void> {
   if (now - lastSessionCheckAt < SESSION_CHECK_MIN_MS) return;
   lastSessionCheckAt = now;
 
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  if (!data.session) {
-    throw new Error('Session expired. Sign out and sign in again.');
-  }
-
-  const expiresMs = (data.session.expires_at ?? 0) * 1000;
-  if (expiresMs > 0 && expiresMs < Date.now()) {
-    throw new Error('Session expired. Sign out and sign in again.');
+  const userId = await getSessionUserId();
+  if (!userId) {
+    throw new Error('Sign in again, then try once more.');
   }
 }
 
 export async function getSessionUserId(): Promise<string | null> {
   if (!supabase) return null;
   const { data } = await supabase.auth.getSession();
-  return data.session?.user?.id ?? null;
+  const fromSession = data.session?.user?.id;
+  if (fromSession) return fromSession;
+  return useAuthStore.getState().user?.id ?? null;
 }

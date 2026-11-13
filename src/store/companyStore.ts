@@ -53,6 +53,7 @@ import {
 } from '../sync/workspaceContentSync';
 import {
   getWorkspaceNoteServerRevision,
+  hasPendingWorkspaceNoteSave,
   overwriteWorkspaceNote,
   queueWorkspaceNotePersist,
   setWorkspaceNoteServerRevision,
@@ -138,6 +139,9 @@ interface CompanyState {
   createWorkspaceNoteInFolder: (folderId: string, title?: string) => string;
   updateWorkspaceNote: (noteId: string, partial: Partial<Note>) => void;
   applyRemoteWorkspaceNote: (note: WorkspaceNote) => void;
+  applyRemoteWorkspaceTask: (task: WorkspaceTask) => void;
+  removeRemoteWorkspaceTask: (taskId: string, folderId: string) => void;
+  removeRemoteWorkspaceNote: (noteId: string, folderId: string) => void;
   setWorkspaceNoteConflict: (noteId: string, server: WorkspaceNote) => void;
   clearWorkspaceNoteConflict: (noteId: string) => void;
   resolveWorkspaceNoteLoadTheirs: (noteId: string) => void;
@@ -226,8 +230,18 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
   },
 
   joinWithInviteCode: async (code) => {
-    await joinCompanyByInvite(code);
+    const companyId = await joinCompanyByInvite(code);
     await get().refreshCompanies();
+    if (companyId) {
+      try {
+        const members = await fetchCompanyMembers(companyId);
+        set((s) => ({
+          membersByCompany: { ...s.membersByCompany, [companyId]: members },
+        }));
+      } catch (err) {
+        console.error(err);
+      }
+    }
   },
 
   leaveWorkspace: async (companyId) => {
@@ -753,19 +767,69 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
   },
 
   applyRemoteWorkspaceNote: (note) => {
-    let folderId: string | null = null;
-    for (const [fid, notes] of Object.entries(get().notesByFolder)) {
-      if (notes.some((n) => n.id === note.id)) {
-        folderId = fid;
-        break;
-      }
-    }
-    if (!folderId) return;
+    if (hasPendingWorkspaceNoteSave(note.id)) return;
+
+    const folderId = note.folderId;
+    const list = get().notesByFolder[folderId] ?? [];
+    const existing = list.find((n) => n.id === note.id);
+    if (existing && existing.updatedAt > note.updatedAt) return;
+
     setWorkspaceNoteServerRevision(note.id, note.updatedAt);
+    set((s) => {
+      const prev = s.notesByFolder[folderId] ?? [];
+      const ix = prev.findIndex((n) => n.id === note.id);
+      const next =
+        ix >= 0 ? prev.map((n) => (n.id === note.id ? note : n)) : [...prev, note].sort((a, b) => a.order - b.order);
+      return {
+        notesByFolder: { ...s.notesByFolder, [folderId]: next },
+      };
+    });
+  },
+
+  applyRemoteWorkspaceTask: (task) => {
+    const userId = useAuthStore.getState().user?.id ?? null;
+    const folderId = task.folderId;
+    set((s) => {
+      const list = s.tasksByFolder[folderId] ?? [];
+      const existing = list.find((t) => t.id === task.id);
+      if (existing && existing.updatedAt > task.updatedAt) return s;
+
+      const nextList = existing
+        ? list.map((t) => (t.id === task.id ? task : t))
+        : [...list, task].sort((a, b) => a.order - b.order);
+
+      let myAssigned = s.myAssignedTasks;
+      const assignedToMe = Boolean(userId && task.assigneeId === userId && !task.archived);
+      if (!assignedToMe) {
+        myAssigned = myAssigned.filter((t) => t.id !== task.id);
+      } else if (myAssigned.some((t) => t.id === task.id)) {
+        myAssigned = myAssigned.map((t) => (t.id === task.id ? task : t));
+      } else {
+        myAssigned = [task, ...myAssigned];
+      }
+
+      return {
+        tasksByFolder: { ...s.tasksByFolder, [folderId]: nextList },
+        myAssignedTasks: myAssigned,
+      };
+    });
+  },
+
+  removeRemoteWorkspaceTask: (taskId, folderId) => {
+    set((s) => ({
+      tasksByFolder: {
+        ...s.tasksByFolder,
+        [folderId]: (s.tasksByFolder[folderId] ?? []).filter((t) => t.id !== taskId),
+      },
+      myAssignedTasks: s.myAssignedTasks.filter((t) => t.id !== taskId),
+    }));
+  },
+
+  removeRemoteWorkspaceNote: (noteId, folderId) => {
     set((s) => ({
       notesByFolder: {
         ...s.notesByFolder,
-        [folderId!]: (s.notesByFolder[folderId!] ?? []).map((n) => (n.id === note.id ? note : n)),
+        [folderId]: (s.notesByFolder[folderId] ?? []).filter((n) => n.id !== noteId),
       },
     }));
   },

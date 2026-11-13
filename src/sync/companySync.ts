@@ -31,7 +31,7 @@ function mapFolder(row: Record<string, unknown>): WorkspaceFolder {
   };
 }
 
-function mapTask(row: Record<string, unknown>): WorkspaceTask {
+export function mapWorkspaceTaskRow(row: Record<string, unknown>): WorkspaceTask {
   return {
     id: row.id as string,
     companyId: row.company_id as string,
@@ -197,7 +197,7 @@ export async function leaveCompany(companyId: string): Promise<void> {
   if (!supabase) throw new Error('Sign in and configure cloud sync first');
   const userId = await getSessionUserId();
   if (!userId) {
-    throw new Error('Your session expired. Sign in again, then try leaving the workspace.');
+    throw new Error('Sign in again, then try leaving the workspace.');
   }
   const { error } = await supabase
     .from('company_members')
@@ -330,7 +330,7 @@ export async function fetchWorkspaceTasks(folderId: string): Promise<WorkspaceTa
     .eq('folder_id', folderId)
     .order('sort_order', { ascending: true });
   if (error) throw error;
-  return (data ?? []).map(mapTask);
+  return (data ?? []).map(mapWorkspaceTaskRow);
 }
 
 export async function createWorkspaceTask(
@@ -359,7 +359,7 @@ export async function createWorkspaceTask(
     .select('*')
     .single();
   if (error) throw error;
-  return mapTask(data);
+  return mapWorkspaceTaskRow(data);
 }
 
 export async function updateWorkspaceTaskRow(
@@ -400,7 +400,7 @@ export async function updateWorkspaceTaskRow(
     .select('*')
     .single();
   if (error) throw error;
-  return mapTask(data);
+  return mapWorkspaceTaskRow(data);
 }
 
 export async function deleteWorkspaceTaskRow(taskId: string): Promise<void> {
@@ -420,5 +420,5 @@ export async function fetchMyAssignedWorkspaceTasks(): Promise<WorkspaceTask[]> 
     .eq('archived', false)
     .order('updated_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []).map(mapTask);
+  return (data ?? []).map(mapWorkspaceTaskRow);
 }

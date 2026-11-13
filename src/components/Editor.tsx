@@ -48,6 +48,7 @@ import {
   getEmbeddedImageSrcs,
   removeEmbeddedImageFromHtml,
 } from '../utils/noteImages';
+import { membersWithCurrentUser } from '../utils/companyMembers';
 
 interface EditorProps {
   noteId?: string;
@@ -257,6 +258,21 @@ export function Editor({
     if (!activeNoteId || !isWorkspaceTaskSelectionId(activeNoteId)) return null;
     return parseWorkspaceTaskSelectionId(activeNoteId)?.taskId ?? null;
   }, [activeNoteId, linkedTaskSelectionId]);
+
+  const workspaceCompanyId =
+    workspaceTaskMeta?.companyId ?? note?.workspaceTaskMeta?.companyId ?? wsFolderRaw?.companyId ?? null;
+  const workspaceMembers = useMemo(
+    () =>
+      workspaceCompanyId
+        ? membersWithCurrentUser(
+            membersByCompany[workspaceCompanyId] ?? [],
+            workspaceCompanyId,
+            currentUserId,
+            currentUserProfile,
+          )
+        : [],
+    [workspaceCompanyId, membersByCompany, currentUserId, currentUserProfile],
+  );
 
   const folder = note
     ? isWorkspaceNoteSelectionId(note.id) && wsFolderRaw
@@ -652,7 +668,7 @@ export function Editor({
           status={workspaceTaskMeta.status}
           dueAt={workspaceTaskMeta.dueAt}
           updatedAt={workspaceTaskMeta.updatedAt}
-          members={membersByCompany[workspaceTaskMeta.companyId] ?? []}
+          members={workspaceMembers}
           profilesByUserId={profilesByUserId}
           currentUserId={currentUserId}
           currentUserProfile={currentUserProfile}
