@@ -48,6 +48,7 @@ import {
 import type { NoteAttachment } from '../types';
 import { hydrateNoteHtmlContent } from '../utils/noteImageStorage';
 import { hydrateWorkspaceTaskMentionsInHtml } from '../utils/workspaceTaskMentionHtml';
+import type { TaskLinkSuggestion } from '../types/taskLink';
 import { LinkDialog } from './LinkDialog';
 import { CommentDialog } from './CommentDialog';
 import { useAuthStore } from '../store/authStore';
@@ -317,10 +318,10 @@ function EditorInsertMenuPanel({
     ];
     base.push({
       id: 'task-mention',
-      label: 'Link workspace task',
+      label: 'Link task',
       hint: 'task:',
       icon: <ClipboardList size={16} />,
-      keywords: ['task', 'mention', 'company', 'workspace', 'link'],
+      keywords: ['task', 'mention', 'company', 'workspace', 'link', 'personal'],
       run: (ed) => ed.chain().focus().insertContent('task:').run(),
     });
     return base;
@@ -415,8 +416,8 @@ interface RichTextEditorProps {
   /** Tap embedded images to preview (mobile); disables drag/select on images. */
   onPreviewImage?: (image: LightboxImage) => void;
   attachments?: NoteAttachment[];
-  workspaceTaskSuggestions?: { id: string; title: string; folderId: string }[];
-  onOpenWorkspaceTask?: (taskId: string, folderId: string) => void;
+  taskLinkSuggestions?: TaskLinkSuggestion[];
+  onOpenTaskLink?: (taskId: string, folderId: string, kind: 'workspace' | 'personal') => void;
 }
 
 export function RichTextEditor({
@@ -429,8 +430,8 @@ export function RichTextEditor({
   compact: _compact,
   onPreviewImage,
   attachments = [],
-  workspaceTaskSuggestions = [],
-  onOpenWorkspaceTask,
+  taskLinkSuggestions = [],
+  onOpenTaskLink,
 }: RichTextEditorProps) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
@@ -486,22 +487,21 @@ export function RichTextEditor({
   onPreviewImageRef.current = onPreviewImage;
   const imageTapRef = useRef<{ x: number; y: number; t: number } | null>(null);
   const imagePreviewTouch = Boolean(onPreviewImage);
-  const workspaceTaskSuggestionsRef = useRef(workspaceTaskSuggestions);
-  workspaceTaskSuggestionsRef.current = workspaceTaskSuggestions;
-  const onOpenWorkspaceTaskRef = useRef(onOpenWorkspaceTask);
-  onOpenWorkspaceTaskRef.current = onOpenWorkspaceTask;
+  const taskLinkSuggestionsRef = useRef(taskLinkSuggestions);
+  taskLinkSuggestionsRef.current = taskLinkSuggestions;
+  const onOpenTaskLinkRef = useRef(onOpenTaskLink);
+  onOpenTaskLinkRef.current = onOpenTaskLink;
 
   const editorHtml = useMemo(() => {
     const base = hydrateNoteHtmlContent(content, attachments);
+    const ws = taskLinkSuggestions.filter((t) => t.kind === 'workspace');
+    const personal = taskLinkSuggestions.filter((t) => t.kind === 'personal');
     return hydrateWorkspaceTaskMentionsInHtml(
       base,
-      workspaceTaskSuggestions.map((t) => ({
-        id: t.id,
-        title: t.title,
-        folderId: t.folderId,
-      })),
+      ws.map((t) => ({ id: t.id, title: t.title, folderId: t.folderId })),
+      personal,
     );
-  }, [content, attachments, workspaceTaskSuggestions]);
+  }, [content, attachments, taskLinkSuggestions]);
 
   const extensions = useMemo(
     () => [
@@ -592,21 +592,31 @@ export function RichTextEditor({
     });
   }, []);
 
-  const insertWorkspaceTaskMention = useCallback(
-    (task: { id: string; title: string; folderId: string }) => {
+  const insertTaskLinkMention = useCallback(
+    (task: TaskLinkSuggestion) => {
       const ed = editorRef.current;
       if (!ed || !taskMention) return;
+      const attrs =
+        task.kind === 'personal'
+          ? {
+              personalTaskId: task.id,
+              taskId: null,
+              taskTitle: task.title,
+              folderId: task.folderId,
+            }
+          : {
+              taskId: task.id,
+              personalTaskId: null,
+              taskTitle: task.title,
+              folderId: task.folderId,
+            };
       ed
         .chain()
         .focus()
         .deleteRange({ from: taskMention.from, to: ed.state.selection.from })
         .insertContent({
           type: 'workspaceTaskMention',
-          attrs: {
-            taskId: task.id,
-            taskTitle: task.title,
-            folderId: task.folderId,
-          },
+          attrs,
         })
         .insertContent(' ')
         .run();
@@ -688,9 +698,14 @@ export function RichTextEditor({
       handleClickOn(_view, _pos, node, _nodePos, event) {
         if (node.type.name === 'workspaceTaskMention') {
           event.preventDefault();
-          const taskId = node.attrs.taskId as string;
+          const personalTaskId = node.attrs.personalTaskId as string | null;
+          const taskId = node.attrs.taskId as string | null;
           const folderId = node.attrs.folderId as string;
-          if (taskId && folderId) onOpenWorkspaceTaskRef.current?.(taskId, folderId);
+          if (personalTaskId) {
+            onOpenTaskLinkRef.current?.(personalTaskId, folderId, 'personal');
+            return true;
+          }
+          if (taskId && folderId) onOpenTaskLinkRef.current?.(taskId, folderId, 'workspace');
           return true;
         }
         if (!onPreviewImageRef.current || node.type.name !== 'image') return false;
@@ -796,10 +811,10 @@ export function RichTextEditor({
   const taskMentionOptions = useMemo(() => {
     if (!taskMention) return [];
     const q = taskMention.query;
-    return workspaceTaskSuggestions
+    return taskLinkSuggestions
       .filter((t) => !q || t.title.toLowerCase().includes(q))
       .slice(0, 8);
-  }, [taskMention, workspaceTaskSuggestions]);
+  }, [taskMention, taskLinkSuggestions]);
 
   useEffect(() => {
     if (editor) onEditorReady?.(editor);
@@ -1216,8 +1231,8 @@ export function RichTextEditor({
             >
               {taskMentionOptions.length === 0 ? (
                 <p className="px-3 py-2 text-xs text-muted-foreground">
-                  {workspaceTaskSuggestions.length === 0
-                    ? 'No workspace tasks loaded. Open a company folder or create a task.'
+                  {taskLinkSuggestions.length === 0
+                    ? 'No tasks found. Create a task in a folder or open a workspace folder.'
                     : 'No matching tasks'}
                 </p>
               ) : (
@@ -1227,7 +1242,7 @@ export function RichTextEditor({
                     type="button"
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      insertWorkspaceTaskMention(task);
+                      insertTaskLinkMention(task);
                     }}
                     className="w-full px-3 py-2 text-left text-sm hover:bg-muted cursor-pointer truncate"
                   >

@@ -1,22 +1,46 @@
+import type { TaskLinkSuggestion } from '../types/taskLink';
+
 export type WorkspaceTaskRef = { id: string; title: string; folderId: string };
 
-/** Restore mention title from live tasks + persisted data attributes. */
+/** Restore mention titles from live tasks + persisted data attributes. */
 export function hydrateWorkspaceTaskMentionsInHtml(
   html: string,
   tasks: WorkspaceTaskRef[],
+  personalTasks: TaskLinkSuggestion[] = [],
 ): string {
-  if (!html.includes('data-workspace-task-id')) return html;
+  if (
+    !html.includes('data-workspace-task-id') &&
+    !html.includes('data-personal-task-id')
+  ) {
+    return html;
+  }
 
-  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const byWsId = new Map(tasks.map((t) => [t.id, t]));
+  const byPersonalId = new Map(
+    personalTasks.filter((t) => t.kind === 'personal').map((t) => [t.id, t]),
+  );
   const doc = new DOMParser().parseFromString(html, 'text/html');
 
-  doc.querySelectorAll('[data-workspace-task-id]').forEach((el) => {
+  doc.querySelectorAll('[data-workspace-task-id], [data-personal-task-id]').forEach((el) => {
+    const personalId = el.getAttribute('data-personal-task-id');
     const taskId = el.getAttribute('data-workspace-task-id');
-    if (!taskId) return;
-
-    const live = byId.get(taskId);
     const storedTitle = el.getAttribute('data-workspace-task-title')?.trim() || '';
     const textTitle = el.textContent?.trim() || '';
+
+    if (personalId) {
+      const live = byPersonalId.get(personalId);
+      const title = live?.title?.trim() || storedTitle || textTitle || 'Task';
+      el.setAttribute('data-workspace-task-title', title);
+      if (live?.folderId) {
+        el.setAttribute('data-personal-task-folder-id', live.folderId);
+      }
+      el.textContent = title;
+      return;
+    }
+
+    if (!taskId) return;
+
+    const live = byWsId.get(taskId);
     const title = live?.title?.trim() || storedTitle || textTitle || 'Task';
 
     el.setAttribute('data-workspace-task-title', title);

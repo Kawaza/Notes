@@ -13,7 +13,7 @@ import { htmlToMarkdown, markdownToHtml } from '../utils/markdown';
 import { dndLog } from '../utils/dndDebug';
 import { isSyncAvailable, pullCloudData, pushCloudData, subscribeCloudChanges } from '../sync/cloudSync';
 import { isDesktopCloudOnly } from '../sync/supabaseClient';
-import { formatSyncError, withSyncTimeout } from '../sync/syncUtils';
+import { formatSyncError, isRateLimitError, withSyncTimeout } from '../sync/syncUtils';
 import {
   compactNoteForStorage,
   compactNotesForSync,
@@ -227,6 +227,8 @@ let cloudPushInFlight: Promise<void> | null = null;
 let lastPushFailAt = 0;
 let lastFailedPayloadJson: string | null = null;
 const PUSH_RETRY_MS = 30_000;
+const PULL_REMOTE_MIN_MS = 45_000;
+let lastPullRemoteAt = 0;
 
 function resetCloudSyncTracking() {
   lastCloudPushAt = 0;
@@ -448,6 +450,10 @@ export const useStore = create<Store>((set, get) => ({
   pullRemoteSync: async (userId = useAuthStore.getState().user?.id ?? undefined) => {
     if (!userId || !isSyncAvailable() || !get().hydrated) return;
 
+    const now = Date.now();
+    if (now - lastPullRemoteAt < PULL_REMOTE_MIN_MS) return;
+    lastPullRemoteAt = now;
+
     try {
       const cloud = await pullCloudData(userId);
       if (!cloud) {
@@ -488,6 +494,13 @@ export const useStore = create<Store>((set, get) => ({
       void get().persist();
     } catch (err) {
       console.error('Remote sync failed:', err);
+      if (isRateLimitError(err)) {
+        set({
+          syncStatus: 'synced',
+          syncError: formatSyncError(err),
+        });
+        return;
+      }
       set({
         syncStatus: 'error',
         syncError: formatSyncError(err),
@@ -506,7 +519,7 @@ export const useStore = create<Store>((set, get) => ({
     void get().pullRemoteSync(userId);
     cloudPullInterval = setInterval(() => {
       void get().pullRemoteSync(userId);
-    }, 30_000);
+    }, 90_000);
   },
 
   stopCloudSync: () => {
@@ -818,10 +831,17 @@ export const useStore = create<Store>((set, get) => ({
         console.error('Cloud push failed:', err);
         lastPushFailAt = Date.now();
         lastFailedPayloadJson = JSON.stringify(getSyncPayload(get()));
-        set({
-          syncStatus: 'error',
-          syncError: formatSyncError(err),
-        });
+        if (isRateLimitError(err)) {
+          set({
+            syncStatus: 'synced',
+            syncError: formatSyncError(err),
+          });
+        } else {
+          set({
+            syncStatus: 'error',
+            syncError: formatSyncError(err),
+          });
+        }
       } finally {
         cloudPushInFlight = null;
       }

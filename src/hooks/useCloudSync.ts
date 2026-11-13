@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useStore } from '../store/useStore';
 import { isSupabaseConfigured } from '../sync/supabaseClient';
@@ -37,10 +37,15 @@ export function useCloudSync() {
     };
   }, [authLoading, userId, rehydrate, startCloudSync, stopCloudSync]);
 
+  const lastFocusPull = useRef(0);
+
   useEffect(() => {
     if (authLoading || !userId) return;
 
     const onFocus = () => {
+      const now = Date.now();
+      if (now - lastFocusPull.current < 120_000) return;
+      lastFocusPull.current = now;
       void pullRemoteSync(userId);
     };
 

@@ -36,6 +36,7 @@ import { MarkdownEditor } from './MarkdownEditor';
 import { RichTextEditor, insertImagesFromFiles } from './RichTextEditor';
 import { FolderOverview } from './FolderOverview';
 import { MY_TASKS_ID, isFolderArchived } from '../types';
+import type { TaskLinkSuggestion } from '../types/taskLink';
 import { useAuthStore } from '../store/authStore';
 import { WorkspaceTaskMetaBar } from './WorkspaceTaskMetaBar';
 import { NoteCollaborationBanner } from './NoteCollaborationBanner';
@@ -124,6 +125,8 @@ export function Editor({
   const profilesByUserId = useCompanyStore((s) => s.profilesByUserId);
   const patchWorkspaceTask = useCompanyStore((s) => s.patchWorkspaceTask);
   const openWorkspaceTask = useStore((s) => s.openWorkspaceTask);
+  const openTaskFromMyTasks = useStore((s) => s.openTaskFromMyTasks);
+  const personalNotes = useStore((s) => s.notes);
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const currentUserProfile = useAuthStore((s) => s.profile);
   const wsFolderRaw = useMemo(() => {
@@ -178,30 +181,55 @@ export function Editor({
     }
   }, [workspaceTaskFolderId, tasksByFolder, loadFolderContent]);
 
-  const workspaceTaskSuggestions = useMemo(() => {
-    const merged = new Map<string, { id: string; title: string; folderId: string }>();
+  const taskLinkSuggestions = useMemo(() => {
+    const merged = new Map<string, TaskLinkSuggestion>();
 
-    const addRows = (rows: { id: string; title: string; folderId: string; archived?: boolean }[]) => {
+    const addWorkspace = (
+      rows: { id: string; title: string; folderId: string; archived?: boolean }[],
+    ) => {
       for (const t of rows) {
         if (t.archived) continue;
-        merged.set(t.id, {
+        merged.set(`ws:${t.id}`, {
           id: t.id,
           title: t.title || 'Untitled task',
           folderId: t.folderId,
+          kind: 'workspace',
         });
       }
     };
 
     if (workspaceTaskFolderId) {
-      addRows(tasksByFolder[workspaceTaskFolderId] ?? []);
+      addWorkspace(tasksByFolder[workspaceTaskFolderId] ?? []);
     }
     for (const rows of Object.values(tasksByFolder)) {
-      addRows(rows);
+      addWorkspace(rows);
     }
-    addRows(myAssignedTasks);
+    addWorkspace(myAssignedTasks);
+
+    for (const n of personalNotes) {
+      if (!n.isTask || n.isCalendarBlock || !n.folderId) continue;
+      merged.set(`p:${n.id}`, {
+        id: n.id,
+        title: n.title || 'Untitled task',
+        folderId: n.folderId,
+        kind: 'personal',
+      });
+    }
 
     return Array.from(merged.values()).sort((a, b) => a.title.localeCompare(b.title));
-  }, [tasksByFolder, workspaceTaskFolderId, myAssignedTasks]);
+  }, [tasksByFolder, workspaceTaskFolderId, myAssignedTasks, personalNotes]);
+
+  const openTaskLink = useCallback(
+    (taskId: string, folderId: string, kind: 'workspace' | 'personal') => {
+      if (kind === 'personal') {
+        const hit = personalNotes.find((n) => n.id === taskId);
+        if (hit) openTaskFromMyTasks(hit);
+        return;
+      }
+      openWorkspaceTask(taskId, folderId);
+    },
+    [personalNotes, openTaskFromMyTasks, openWorkspaceTask],
+  );
 
   const linkedTaskSelectionId = calendarBlock?.linkedTaskId ?? null;
 
@@ -689,8 +717,8 @@ export function Editor({
             onPreviewImage={
               imageLightboxEnabled ? openNoteImagePreview : undefined
             }
-            workspaceTaskSuggestions={workspaceTaskSuggestions}
-            onOpenWorkspaceTask={openWorkspaceTask}
+            taskLinkSuggestions={taskLinkSuggestions}
+            onOpenTaskLink={openTaskLink}
           />
         )}
         {!compact && note.attachments.length > 0 && (

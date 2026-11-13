@@ -12,7 +12,13 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useStore } from '../store/useStore';
 import { useCompanyStore } from '../store/companyStore';
-import { MY_TASKS_ID, getNewNoteFolderId, isFolderArchived, isNoteFolder } from '../types';
+import {
+  MY_TASKS_ID,
+  getNewNoteFolderId,
+  isFolderArchived,
+  isNoteFolder,
+  isPersonalFolderView,
+} from '../types';
 import {
   WORKSPACE_TASK_STATUS_LABELS,
   isWorkspaceArchiveSelectionId,
@@ -570,16 +576,22 @@ export function NoteList({
   const membersByCompany = useCompanyStore((s) => s.membersByCompany);
   const profilesByUserId = useCompanyStore((s) => s.profilesByUserId);
   const isArchiveView = isWorkspaceArchiveSelectionId(selectedFolderId);
-  const isPersonalNoteFolder = Boolean(
+  const isPersonalNoteFolder = isPersonalFolderView(folder, isWorkspaceFolder, showMyTasks);
+  const isActivePersonalNoteFolder = Boolean(
     folder && isNoteFolder(folder) && !isWorkspaceFolder && !showMyTasks,
   );
   const personalTasks = useMemo(() => {
-    if (!selectedFolderId || isWorkspaceFolder) return [];
+    if (!isPersonalNoteFolder || !selectedFolderId) return [];
     return allNotes
       .filter((n) => n.folderId === selectedFolderId && n.isTask && !n.isCalendarBlock)
       .sort((a, b) => a.order - b.order);
-  }, [allNotes, selectedFolderId, isWorkspaceFolder]);
+  }, [allNotes, selectedFolderId, isPersonalNoteFolder]);
   const wsFolderId = parseWorkspaceFolderSelectionId(selectedFolderId)?.folderId;
+  const loadFolderContent = useCompanyStore((s) => s.loadFolderContent);
+
+  useEffect(() => {
+    if (wsFolderId) void loadFolderContent(wsFolderId);
+  }, [wsFolderId, loadFolderContent]);
   const wsFolder = wsFolderId ? findWorkspaceFolder(foldersByCompany, wsFolderId) : null;
   const wsFolderArchived = Boolean(wsFolder?.archived);
   const workspaceTasks = useWorkspaceTasks(wsFolderId ?? null, isArchiveView, wsFolderArchived);
@@ -611,7 +623,8 @@ export function NoteList({
         : wsFolderName
       : wsFolderName ?? folder?.name ?? 'Notes';
   const noteIds = useMemo(() => notes.map((n) => n.id), [notes]);
-  const folderHasTaskTabs = isWorkspaceFolder || isPersonalNoteFolder;
+  const folderHasTaskTabs =
+    isWorkspaceFolder || isArchiveView || isPersonalNoteFolder;
   const showingTasks =
     showMyTasks ||
     (isArchiveView && workspaceListTab === 'tasks') ||
@@ -687,7 +700,9 @@ export function NoteList({
 
       {!showMyTasks &&
         selectedFolderId &&
-        (isWorkspaceFolder || isPersonalNoteFolder || (folder && !isFolderArchived(folder))) && (
+        (isWorkspaceFolder ||
+          isPersonalNoteFolder ||
+          (folder && !isFolderArchived(folder) && !isArchiveView)) && (
           <FolderPinnedBar
             folderId={selectedFolderId}
             notes={notes}
@@ -695,7 +710,7 @@ export function NoteList({
           />
         )}
 
-      {(folderHasTaskTabs || isArchiveView) && !showMyTasks && (
+      {folderHasTaskTabs && !showMyTasks && (
         <div className="flex border-b border-border px-2">
           <button
             type="button"
@@ -735,7 +750,7 @@ export function NoteList({
           onNewTask={
             isWorkspaceFolder
               ? () => setShowAddTaskDialog(true)
-              : isPersonalNoteFolder
+              : isActivePersonalNoteFolder
                 ? () => setShowAddTaskDialog(true)
                 : undefined
           }
@@ -755,13 +770,13 @@ export function NoteList({
         currentUserId={currentUserId}
         currentUserProfile={currentUserProfile}
         onSave={(title, assigneeId) => {
-          if (isPersonalNoteFolder && currentUserId) {
+          if (isActivePersonalNoteFolder && currentUserId) {
             createPersonalTask(title);
           } else {
             createWorkspaceTask(assigneeId, title);
           }
         }}
-        soloAssignee={isPersonalNoteFolder}
+        soloAssignee={isActivePersonalNoteFolder}
       />
 
       <QuickLinkDialog

@@ -59,7 +59,28 @@ export function formatSyncPayloadSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function rawErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (err && typeof err === 'object') {
+    const e = err as { message?: string; details?: string };
+    return [e.message, e.details].filter(Boolean).join(' — ');
+  }
+  return String(err ?? '');
+}
+
+export function isRateLimitError(err: unknown): boolean {
+  const msg = rawErrorMessage(err).toLowerCase();
+  return (
+    msg.includes('rate limit') ||
+    msg.includes('too many requests') ||
+    msg.includes('over_request_rate')
+  );
+}
+
 export function formatSyncError(err: unknown): string {
+  if (isRateLimitError(err)) {
+    return 'Sync paused briefly (request rate limit). Your notes are still saved locally — try again in a minute.';
+  }
   if (err instanceof Error && err.message) return err.message;
   if (err && typeof err === 'object') {
     const e = err as { message?: string; code?: string; details?: string; hint?: string };

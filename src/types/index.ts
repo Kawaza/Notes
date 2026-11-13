@@ -147,6 +147,15 @@ export function isNoteFolder(folder: Folder | undefined): boolean {
   return Boolean(folder) && !isFolderArchived(folder) && !isParentFolder(folder);
 }
 
+/** Personal folder list (active or archived) — supports Notes / Tasks tabs. */
+export function isPersonalFolderView(
+  folder: Folder | undefined,
+  isWorkspaceFolder: boolean,
+  showMyTasks: boolean,
+): boolean {
+  return Boolean(folder && !isWorkspaceFolder && !showMyTasks && !folder.isParent);
+}
+
 /** Folder id for a newly created note from the current sidebar selection. */
 export function getNewNoteFolderId(selectedFolderId: string | null): string | null {
   if (
