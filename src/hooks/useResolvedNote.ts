@@ -16,6 +16,7 @@ export function useResolvedNote(activeNoteId: string | null | undefined): Note |
   const notesByFolder = useCompanyStore((s) => s.notesByFolder);
   const tasksByFolder = useCompanyStore((s) => s.tasksByFolder);
   const myAssignedTasks = useCompanyStore((s) => s.myAssignedTasks);
+  const foldersByCompany = useCompanyStore((s) => s.foldersByCompany);
 
   return useMemo(() => {
     if (!activeNoteId) return undefined;
@@ -39,6 +40,7 @@ export function useResolvedNote(activeNoteId: string | null | undefined): Note |
             personalNotes,
             tasksByFolder,
             myAssignedTasks,
+            foldersByCompany,
           );
           if (linked) {
             return {
@@ -61,6 +63,6 @@ export function useResolvedNote(activeNoteId: string | null | undefined): Note |
       if (hit) return workspaceNoteToNote(hit);
     }
     return undefined;
-  }, [activeNoteId, personalNotes, notesByFolder, tasksByFolder, myAssignedTasks]);
+  }, [activeNoteId, personalNotes, notesByFolder, tasksByFolder, myAssignedTasks, foldersByCompany]);
 }
 

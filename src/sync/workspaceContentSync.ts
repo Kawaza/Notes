@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { ensureFreshSession } from './syncUtils';
+import { getSessionUserId } from './syncUtils';
 import type { FolderSecretType, Note, NoteAttachment } from '../types';
 import type {
   WorkspaceFolder,
@@ -82,8 +82,6 @@ export async function fetchWorkspaceFolderContent(folderId: string): Promise<{
   secrets: WorkspaceFolderSecret[];
 }> {
   if (!supabase) return { notes: [], links: [], secrets: [] };
-  await ensureFreshSession();
-
   const [notesRes, linksRes, secretsRes] = await Promise.all([
     supabase
       .from('workspace_notes')
@@ -122,10 +120,7 @@ export async function createWorkspaceNote(
   noteId?: string,
 ): Promise<WorkspaceNote> {
   if (!supabase) throw new Error('Cloud sync required');
-  await ensureFreshSession();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const userId = await getSessionUserId();
   const now = new Date().toISOString();
   const { data, error } = await supabase
     .from('workspace_notes')
@@ -140,7 +135,7 @@ export async function createWorkspaceNote(
       attachments: [],
       sort_order: order,
       is_task: false,
-      created_by: user?.id ?? null,
+      created_by: userId,
       created_at: now,
       updated_at: now,
     })
@@ -154,7 +149,6 @@ export type WorkspaceNoteUpdateResult = WorkspaceNote | 'conflict';
 
 export async function fetchWorkspaceNoteById(noteId: string): Promise<WorkspaceNote | null> {
   if (!supabase) return null;
-  await ensureFreshSession();
   const { data, error } = await supabase.from('workspace_notes').select('*').eq('id', noteId).maybeSingle();
   if (error || !data) return null;
   return mapNote(data);
@@ -180,7 +174,6 @@ export async function updateWorkspaceNoteRow(
   options?: { ifUnmodifiedSince?: string },
 ): Promise<WorkspaceNoteUpdateResult> {
   if (!supabase) throw new Error('Cloud sync required');
-  await ensureFreshSession();
   const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (patch.title !== undefined) row.title = patch.title;
   if (patch.content !== undefined) row.content = patch.content;
@@ -205,7 +198,6 @@ export async function updateWorkspaceNoteRow(
 
 export async function deleteWorkspaceNoteRow(noteId: string): Promise<void> {
   if (!supabase) throw new Error('Cloud sync required');
-  await ensureFreshSession();
   const { error } = await supabase.from('workspace_notes').delete().eq('id', noteId);
   if (error) throw error;
 }
@@ -218,7 +210,6 @@ export async function createWorkspaceFolderLink(
   order: number,
 ): Promise<WorkspaceFolderLink> {
   if (!supabase) throw new Error('Cloud sync required');
-  await ensureFreshSession();
   const { data, error } = await supabase
     .from('workspace_folder_links')
     .insert({
@@ -240,7 +231,6 @@ export async function updateWorkspaceFolderLinkRow(
   patch: Partial<Pick<WorkspaceFolderLink, 'title' | 'url' | 'order' | 'pinned'>>,
 ): Promise<WorkspaceFolderLink> {
   if (!supabase) throw new Error('Cloud sync required');
-  await ensureFreshSession();
   const row: Record<string, unknown> = {};
   if (patch.title !== undefined) row.title = patch.title;
   if (patch.url !== undefined) row.url = patch.url;
@@ -258,7 +248,6 @@ export async function updateWorkspaceFolderLinkRow(
 
 export async function deleteWorkspaceFolderLinkRow(linkId: string): Promise<void> {
   if (!supabase) throw new Error('Cloud sync required');
-  await ensureFreshSession();
   const { error } = await supabase.from('workspace_folder_links').delete().eq('id', linkId);
   if (error) throw error;
 }
@@ -277,7 +266,6 @@ export async function createWorkspaceFolderSecret(
   order: number,
 ): Promise<WorkspaceFolderSecret> {
   if (!supabase) throw new Error('Cloud sync required');
-  await ensureFreshSession();
   const now = new Date().toISOString();
   const { data: row, error } = await supabase
     .from('workspace_folder_secrets')
@@ -312,7 +300,6 @@ export async function updateWorkspaceFolderSecretRow(
   },
 ): Promise<WorkspaceFolderSecret> {
   if (!supabase) throw new Error('Cloud sync required');
-  await ensureFreshSession();
   const { data: row, error } = await supabase
     .from('workspace_folder_secrets')
     .update({
@@ -333,7 +320,6 @@ export async function updateWorkspaceFolderSecretRow(
 
 export async function deleteWorkspaceFolderSecretRow(secretId: string): Promise<void> {
   if (!supabase) throw new Error('Cloud sync required');
-  await ensureFreshSession();
   const { error } = await supabase.from('workspace_folder_secrets').delete().eq('id', secretId);
   if (error) throw error;
 }
@@ -343,7 +329,6 @@ export async function updateWorkspaceFolderRow(
   patch: Partial<Pick<WorkspaceFolder, 'name' | 'parentId' | 'isParent' | 'order' | 'calendarColor' | 'archived'>>,
 ): Promise<WorkspaceFolder> {
   if (!supabase) throw new Error('Cloud sync required');
-  await ensureFreshSession();
   const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.parentId !== undefined) row.parent_id = patch.parentId;
@@ -363,7 +348,6 @@ export async function updateWorkspaceFolderRow(
 
 export async function deleteWorkspaceFolderRow(folderId: string): Promise<void> {
   if (!supabase) throw new Error('Cloud sync required');
-  await ensureFreshSession();
   const { error } = await supabase.from('workspace_folders').delete().eq('id', folderId);
   if (error) throw error;
 }

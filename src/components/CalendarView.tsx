@@ -24,6 +24,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const folders = useStore((s) => s.folders);
   const tasksByFolder = useCompanyStore((s) => s.tasksByFolder);
   const myAssignedTasks = useCompanyStore((s) => s.myAssignedTasks);
+  const foldersByCompany = useCompanyStore((s) => s.foldersByCompany);
   const theme = useStore((s) => s.theme);
   const colorPalette = useStore((s) => s.colorPalette);
   const createNote = useStore((s) => s.createNote);
@@ -68,12 +69,26 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
         if (!n.isCalendarBlock || !n.scheduledAt) return false;
         if (!n.linkedTaskId) return true;
         return Boolean(
-          resolveActiveLinkedTaskNote(n.linkedTaskId, notes, tasksByFolder, myAssignedTasks, folders),
+          resolveActiveLinkedTaskNote(
+            n.linkedTaskId,
+            notes,
+            tasksByFolder,
+            myAssignedTasks,
+            folders,
+            foldersByCompany,
+          ),
         );
       })
       .map((n) => {
         const title = n.linkedTaskId
-          ? resolveLinkedTaskTitle(n.linkedTaskId, notes, tasksByFolder, myAssignedTasks, folders)
+          ? resolveLinkedTaskTitle(
+              n.linkedTaskId,
+              notes,
+              tasksByFolder,
+              myAssignedTasks,
+              folders,
+              foldersByCompany,
+            )
           : n.title || 'Untitled';
         const style = resolveCalendarEventStyle(
           n.calendarColor ?? defaultCalendarColorForPalette(colorPalette),
@@ -90,7 +105,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
           textColor: style.textColor,
         };
       });
-  }, [notes, folders, tasksByFolder, myAssignedTasks, isDark, colorPalette]);
+  }, [notes, folders, tasksByFolder, myAssignedTasks, foldersByCompany, isDark, colorPalette]);
 
   const handleEventClick = (info: EventClickArg) => {
     setPanelNoteId(info.event.id);
@@ -231,7 +246,14 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
                 if (!block) return;
                 const current =
                   block.linkedTaskId
-                    ? resolveLinkedTaskTitle(block.linkedTaskId, notes, tasksByFolder, myAssignedTasks)
+                    ? resolveLinkedTaskTitle(
+                        block.linkedTaskId,
+                        notes,
+                        tasksByFolder,
+                        myAssignedTasks,
+                        folders,
+                        foldersByCompany,
+                      )
                     : block.title || 'Planning';
                 const newTitle = prompt('Rename block label (unlink to edit linked task title):', current);
                 if (!newTitle?.trim() || block.linkedTaskId) return;

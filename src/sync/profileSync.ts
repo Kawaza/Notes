@@ -15,16 +15,20 @@ function mapProfile(row: Record<string, unknown>): UserProfile {
   };
 }
 
-export async function fetchMyProfile(): Promise<UserProfile | null> {
+export async function fetchProfileForUserId(userId: string): Promise<UserProfile | null> {
   if (!supabase) return null;
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-  const { data, error } = await supabase.from('user_profiles').select('*').eq('user_id', user.id).maybeSingle();
+  const { data, error } = await supabase.from('user_profiles').select('*').eq('user_id', userId).maybeSingle();
   if (error) throw error;
   if (!data) return null;
   return mapProfile(data);
+}
+
+export async function fetchMyProfile(): Promise<UserProfile | null> {
+  if (!supabase) return null;
+  const { data } = await supabase.auth.getSession();
+  const userId = data.session?.user?.id;
+  if (!userId) return null;
+  return fetchProfileForUserId(userId);
 }
 
 export async function upsertMyProfile(input: {
@@ -32,9 +36,8 @@ export async function upsertMyProfile(input: {
   lastName: string;
 }): Promise<UserProfile> {
   if (!supabase) throw new Error('Sign in required');
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data } = await supabase.auth.getSession();
+  const user = data.session?.user;
   if (!user) throw new Error('Sign in required');
   const firstName = input.firstName.trim();
   const lastName = input.lastName.trim();
@@ -46,12 +49,12 @@ export async function upsertMyProfile(input: {
     display_name: displayName,
     updated_at: new Date().toISOString(),
   };
-  const { data, error } = await supabase.from('user_profiles').upsert(row).select('*').single();
+  const { data: saved, error } = await supabase.from('user_profiles').upsert(row).select('*').single();
   if (error) throw error;
   if (displayName) {
     await supabase.from('company_members').update({ display_name: displayName }).eq('user_id', user.id);
   }
-  return mapProfile(data);
+  return mapProfile(saved);
 }
 
 export async function fetchProfilesForUsers(userIds: string[]): Promise<UserProfile[]> {

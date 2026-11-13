@@ -1,4 +1,3 @@
-import { supabase } from './supabaseClient';
 import type { SyncPayload } from './types';
 import { compactNotesForSync } from '../utils/noteImageStorage';
 
@@ -115,34 +114,7 @@ export async function withSyncTimeout<T>(
   }
 }
 
-export async function ensureFreshSession(): Promise<void> {
-  if (!supabase) throw new Error('Cloud sync is not configured');
-
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  if (!data.session) {
-    throw new Error('Session expired. Sign out and sign in again.');
-  }
-
-  const expiresAt = data.session.expires_at ?? 0;
-  const expiresMs = expiresAt * 1000;
-  if (expiresMs > 0 && expiresMs < Date.now() + 60_000) {
-    const refreshed = await supabase.auth.refreshSession();
-    if (refreshed.error) {
-      const lower = refreshed.error.message.toLowerCase();
-      if (
-        expiresMs > Date.now() &&
-        (lower.includes('rate limit') || lower.includes('too many requests'))
-      ) {
-        return;
-      }
-      throw new Error(`Session refresh failed: ${refreshed.error.message}`);
-    }
-    if (!refreshed.data.session) {
-      throw new Error('Session expired. Sign out and sign in again.');
-    }
-  }
-}
+export { ensureFreshSession, getSessionUserId } from './authSession';
 
 export function assertSyncPayloadSize(payload: SyncPayload): void {
   const analysis = analyzeSyncPayloadSize(payload);

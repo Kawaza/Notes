@@ -14,6 +14,7 @@ import type {
 } from '../types/company';
 import type { UserProfile } from '../types/profile';
 import { fetchProfilesForUsers } from '../sync/profileSync';
+import { ensureFreshSession } from '../sync/syncUtils';
 import { supabase } from '../sync/supabaseClient';
 import { useAuthStore } from './authStore';
 import {
@@ -68,6 +69,7 @@ function companyIdForFolder(
 }
 
 const inFlightFolderLoads = new Set<string>();
+let refreshCompaniesInFlight: Promise<void> | null = null;
 
 function workspaceFolderMeta(
   foldersByCompany: Record<string, WorkspaceFolder[]>,
@@ -167,36 +169,43 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
   error: null,
 
   refreshCompanies: async () => {
-    set({ loading: true, error: null });
-    try {
-      const [companies, archivedCompanies] = await Promise.all([
-        fetchMyCompanies(),
-        import('../sync/companySync').then((m) => m.fetchDeletedCompaniesForOwner()),
-      ]);
-      const foldersByCompany: Record<string, WorkspaceFolder[]> = {};
-      const membersByCompany: Record<string, CompanyMember[]> = {};
-      await Promise.all(
-        companies.map(async (c) => {
-          foldersByCompany[c.id] = await fetchWorkspaceFolders(c.id);
-          membersByCompany[c.id] = await fetchCompanyMembers(c.id);
-        }),
-      );
-      const userIds = new Set<string>();
-      for (const members of Object.values(membersByCompany)) {
-        for (const m of members) userIds.add(m.userId);
+    if (refreshCompaniesInFlight) return refreshCompaniesInFlight;
+    refreshCompaniesInFlight = (async () => {
+      set({ loading: true, error: null });
+      try {
+        await ensureFreshSession();
+        const [companies, archivedCompanies] = await Promise.all([
+          fetchMyCompanies(),
+          import('../sync/companySync').then((m) => m.fetchDeletedCompaniesForOwner()),
+        ]);
+        const foldersByCompany: Record<string, WorkspaceFolder[]> = {};
+        const membersByCompany: Record<string, CompanyMember[]> = {};
+        await Promise.all(
+          companies.map(async (c) => {
+            foldersByCompany[c.id] = await fetchWorkspaceFolders(c.id);
+            membersByCompany[c.id] = await fetchCompanyMembers(c.id);
+          }),
+        );
+        const userIds = new Set<string>();
+        for (const members of Object.values(membersByCompany)) {
+          for (const m of members) userIds.add(m.userId);
+        }
+        const profiles = await fetchProfilesForUsers([...userIds]);
+        const profilesByUserId = Object.fromEntries(profiles.map((p) => [p.userId, p]));
+        const me = useAuthStore.getState().profile;
+        if (me) profilesByUserId[me.userId] = me;
+        set({ companies, archivedCompanies, foldersByCompany, membersByCompany, profilesByUserId, loading: false });
+        await get().loadMyAssignedTasks();
+      } catch (err) {
+        set({
+          loading: false,
+          error: err instanceof Error ? err.message : 'Failed to load company folders',
+        });
       }
-      const profiles = await fetchProfilesForUsers([...userIds]);
-      const profilesByUserId = Object.fromEntries(profiles.map((p) => [p.userId, p]));
-      const me = useAuthStore.getState().profile;
-      if (me) profilesByUserId[me.userId] = me;
-      set({ companies, archivedCompanies, foldersByCompany, membersByCompany, profilesByUserId, loading: false });
-      await get().loadMyAssignedTasks();
-    } catch (err) {
-      set({
-        loading: false,
-        error: err instanceof Error ? err.message : 'Failed to load company folders',
-      });
-    }
+    })().finally(() => {
+      refreshCompaniesInFlight = null;
+    });
+    return refreshCompaniesInFlight;
   },
 
   loadMyAssignedTasks: async () => {
@@ -276,6 +285,7 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
     if (inFlightFolderLoads.has(folderId)) return;
     inFlightFolderLoads.add(folderId);
     try {
+      await ensureFreshSession();
       const [{ notes, links, secrets }, tasks] = await Promise.all([
         fetchWorkspaceFolderContent(folderId),
         fetchWorkspaceTasks(folderId),

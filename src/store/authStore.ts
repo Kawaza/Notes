@@ -105,10 +105,18 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     });
     if (data.session?.user) void get().loadProfile();
 
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.onAuthStateChange((event, session) => {
       set({ session, user: session?.user ?? null, authLoading: false, authFeedback: { kind: 'idle' } });
-      if (session?.user) void get().loadProfile();
-      else set({ profile: null });
+      if (session?.user) {
+        const shouldLoadProfile =
+          event === 'INITIAL_SESSION' ||
+          event === 'SIGNED_IN' ||
+          event === 'USER_UPDATED' ||
+          !get().profile;
+        if (shouldLoadProfile) void get().loadProfile();
+      } else {
+        set({ profile: null });
+      }
     });
   },
 

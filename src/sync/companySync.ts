@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { ensureFreshSession, isRateLimitError } from './syncUtils';
+import { getSessionUserId, isRateLimitError } from './syncUtils';
 import { generateInviteCode, normalizeInviteCodeInput } from '../utils/inviteCode';
 import type { Company, CompanyMember, WorkspaceFolder, WorkspaceTask, WorkspaceTaskStatus } from '../types/company';
 import { profileFullName } from '../types/profile';
@@ -55,14 +55,12 @@ function mapTask(row: Record<string, unknown>): WorkspaceTask {
 
 export async function fetchMyCompanies(): Promise<Company[]> {
   if (!supabase) return [];
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return [];
+  const userId = await getSessionUserId();
+  if (!userId) return [];
   const { data: memberships, error: memErr } = await supabase
     .from('company_members')
     .select('company_id')
-    .eq('user_id', user.id);
+    .eq('user_id', userId);
   if (memErr) throw memErr;
   const ids = (memberships ?? []).map((m) => m.company_id as string);
   if (!ids.length) return [];
@@ -81,14 +79,12 @@ export async function fetchMyCompanies(): Promise<Company[]> {
 
 export async function fetchDeletedCompaniesForOwner(): Promise<Company[]> {
   if (!supabase) return [];
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return [];
+  const userId = await getSessionUserId();
+  if (!userId) return [];
   const { data, error } = await supabase
     .from('companies')
     .select('*')
-    .eq('owner_id', user.id)
+    .eq('owner_id', userId)
     .not('deleted_at', 'is', null)
     .order('deleted_at', { ascending: false });
   if (error) throw error;
@@ -97,15 +93,13 @@ export async function fetchDeletedCompaniesForOwner(): Promise<Company[]> {
 
 export async function restoreCompany(companyId: string): Promise<void> {
   if (!supabase) throw new Error('Cloud sync required');
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not signed in');
+  const userId = await getSessionUserId();
+  if (!userId) throw new Error('Not signed in');
   const { error } = await supabase
     .from('companies')
     .update({ deleted_at: null })
     .eq('id', companyId)
-    .eq('owner_id', user.id);
+    .eq('owner_id', userId);
   if (error) throw error;
 }
 
@@ -145,17 +139,15 @@ function formatCompanyCreateError(message: string, code?: string): string {
 
 export async function createCompany(name: string): Promise<Company> {
   if (!supabase) throw new Error('Sign in and configure cloud sync first');
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('Sign in to create a company folder');
-
-  await ensureFreshSession();
+  const userId = await getSessionUserId();
+  if (!userId) throw new Error('Sign in to create a company folder');
+  const { data: sessionData } = await supabase.auth.getSession();
+  const user = sessionData.session?.user;
 
   const inviteCode = generateInviteCode();
   const profile = await fetchMyProfile();
   const displayName =
-    (profile ? profileFullName(profile) : '') || user.email?.split('@')[0] || 'Owner';
+    (profile ? profileFullName(profile) : '') || user?.email?.split('@')[0] || 'Owner';
 
   const { data: rpcData, error: rpcError } = await supabase.rpc('create_company_workspace', {
     p_name: name.trim(),
@@ -181,7 +173,7 @@ export async function createCompany(name: string): Promise<Company> {
 
   const { data, error } = await supabase
     .from('companies')
-    .insert({ name: name.trim(), invite_code: inviteCode, owner_id: user.id })
+    .insert({ name: name.trim(), invite_code: inviteCode, owner_id: userId })
     .select('*')
     .single();
   if (error) {
@@ -191,7 +183,7 @@ export async function createCompany(name: string): Promise<Company> {
   const company = mapCompany(data);
   const { error: memberErr } = await supabase.from('company_members').insert({
     company_id: company.id,
-    user_id: user.id,
+    user_id: userId,
     role: 'owner',
     display_name: displayName,
   });
@@ -203,13 +195,7 @@ export async function createCompany(name: string): Promise<Company> {
 
 export async function leaveCompany(companyId: string): Promise<void> {
   if (!supabase) throw new Error('Sign in and configure cloud sync first');
-  await ensureFreshSession();
-  const {
-    data: { session },
-    error: sessionErr,
-  } = await supabase.auth.getSession();
-  if (sessionErr) throw sessionErr;
-  const userId = session?.user?.id;
+  const userId = await getSessionUserId();
   if (!userId) {
     throw new Error('Your session expired. Sign in again, then try leaving the workspace.');
   }
@@ -223,15 +209,13 @@ export async function leaveCompany(companyId: string): Promise<void> {
 
 export async function softDeleteCompany(companyId: string): Promise<void> {
   if (!supabase) throw new Error('Sign in and configure cloud sync first');
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not signed in');
+  const userId = await getSessionUserId();
+  if (!userId) throw new Error('Not signed in');
   const { data, error } = await supabase
     .from('companies')
     .update({ deleted_at: new Date().toISOString() })
     .eq('id', companyId)
-    .eq('owner_id', user.id)
+    .eq('owner_id', userId)
     .select('id');
   if (error) {
     if (error.message.includes('deleted_at')) {
@@ -246,17 +230,15 @@ export async function softDeleteCompany(companyId: string): Promise<void> {
 
 export async function deleteCompany(companyId: string): Promise<void> {
   if (!supabase) throw new Error('Sign in and configure cloud sync first');
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not signed in');
+  const userId = await getSessionUserId();
+  if (!userId) throw new Error('Not signed in');
   const { data: company, error: readErr } = await supabase
     .from('companies')
     .select('owner_id')
     .eq('id', companyId)
     .maybeSingle();
   if (readErr) throw readErr;
-  if (!company || company.owner_id !== user.id) {
+  if (!company || company.owner_id !== userId) {
     throw new Error('Only the workspace owner can delete it');
   }
 
@@ -291,11 +273,8 @@ export async function deleteCompany(companyId: string): Promise<void> {
 
 export async function joinCompanyByInvite(inviteCode: string): Promise<string> {
   if (!supabase) throw new Error('Sign in and configure cloud sync first');
-  await ensureFreshSession();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.user) {
+  const userId = await getSessionUserId();
+  if (!userId) {
     throw new Error('Sign in first, then enter your invite code.');
   }
 
@@ -305,8 +284,7 @@ export async function joinCompanyByInvite(inviteCode: string): Promise<string> {
 
   let result = await run();
   if (result.error && isRateLimitError(result.error)) {
-    await new Promise((r) => setTimeout(r, 1200));
-    await ensureFreshSession();
+    await new Promise((r) => setTimeout(r, 2500));
     result = await run();
   }
   if (result.error) throw result.error;
@@ -362,10 +340,8 @@ export async function createWorkspaceTask(
   taskId?: string,
 ): Promise<WorkspaceTask> {
   if (!supabase) throw new Error('Cloud sync required');
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('Sign in required');
+  const userId = await getSessionUserId();
+  if (!userId) throw new Error('Sign in required');
 
   const { data, error } = await supabase
     .from('workspace_tasks')
@@ -378,7 +354,7 @@ export async function createWorkspaceTask(
       is_task: partial?.isTask ?? true,
       assignee_id: partial?.assigneeId ?? null,
       sort_order: partial?.order ?? 0,
-      created_by: user.id,
+      created_by: userId,
     })
     .select('*')
     .single();
@@ -435,14 +411,12 @@ export async function deleteWorkspaceTaskRow(taskId: string): Promise<void> {
 
 export async function fetchMyAssignedWorkspaceTasks(): Promise<WorkspaceTask[]> {
   if (!supabase) return [];
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return [];
+  const userId = await getSessionUserId();
+  if (!userId) return [];
   const { data, error } = await supabase
     .from('workspace_tasks')
     .select('*')
-    .eq('assignee_id', user.id)
+    .eq('assignee_id', userId)
     .eq('archived', false)
     .order('updated_at', { ascending: false });
   if (error) throw error;

@@ -1,7 +1,7 @@
 {
   "name": "notes",
   "private": true,
-  "version": "1.0.95",
+  "version": "1.0.97",
   "description": "A clean, local note-taking app with folders, calendar, and code blocks",
   "author": "Kawaza",
   "repository": {
@@ -27,6 +27,7 @@
   "build": {
     "appId": "com.notes.app",
     "productName": "Notes",
+    "artifactName": "Notes-Setup-${version}.${ext}",
     "directories": {
       "output": "release"
     },
