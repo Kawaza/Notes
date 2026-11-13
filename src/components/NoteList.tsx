@@ -1,7 +1,9 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
+import { memberDisplayName } from '../utils/memberDisplayName';
+import { WORKSPACE_TASK_STATUS_STYLES } from '../constants/workspaceTaskStatusStyles';
 import { LinkIcon } from './LinkIcon';
-import { Plus, GripVertical, CalendarClock, Star, Trash2, Pencil, PinOff, Copy, Archive, MoreVertical } from 'lucide-react';
+import { Plus, GripVertical, CalendarClock, Star, Trash2, Pencil, PinOff, Copy, Archive, ArchiveRestore, MoreVertical } from 'lucide-react';
 import {
   SortableContext,
   useSortable,
@@ -9,56 +11,93 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useStore } from '../store/useStore';
-import { ALL_NOTES_ID, getNewNoteFolderId, isFolderArchived } from '../types';
+import { useCompanyStore } from '../store/companyStore';
+import { MY_TASKS_ID, getNewNoteFolderId, isFolderArchived, isNoteFolder } from '../types';
+import {
+  WORKSPACE_TASK_STATUS_LABELS,
+  isWorkspaceArchiveSelectionId,
+  isWorkspaceFolderSelectionId,
+  parseWorkspaceFolderSelectionId,
+} from '../types/company';
+import { workspaceLinkToFolderLink, workspaceNoteToNote, workspaceTaskToNote } from '../utils/workspaceMappers';
+import { useAuthStore } from '../store/authStore';
+import { WorkspaceAddTaskDialog } from './WorkspaceAddTaskDialog';
 import type { Note, FolderLink } from '../types';
 import { ContextMenu } from './ContextMenu';
 import { ConfirmDialog } from './ConfirmDialog';
 import { AddItemMenu } from './AddItemMenu';
 import { QuickLinkDialog } from './QuickLinkDialog';
+import { SecretDialog, type SecretFormData } from './SecretDialog';
 import { OverflowMenu } from './OverflowMenu';
 import { MobileNavButton } from './MobileNavButton';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { openExternalUrl } from '../utils/openExternal';
+import { useMyTasksList } from '../hooks/useMyTasksList';
+import { findWorkspaceFolder } from '../utils/workspaceFolderTree';
 
 function useDisplayedNotes() {
   const allNotes = useStore((s) => s.notes);
   const folders = useStore((s) => s.folders);
   const selectedFolderId = useStore((s) => s.selectedFolderId);
+  const notesByFolder = useCompanyStore((s) => s.notesByFolder);
+  const foldersByCompany = useCompanyStore((s) => s.foldersByCompany);
 
   return useMemo(() => {
-    let filtered = allNotes;
-    if (selectedFolderId && selectedFolderId !== ALL_NOTES_ID) {
-      filtered = filtered.filter((n) => n.folderId === selectedFolderId);
-    } else if (selectedFolderId === ALL_NOTES_ID) {
-      filtered = filtered.filter((n) => {
-        if (!n.folderId) return true;
-        const folder = folders.find((f) => f.id === n.folderId);
-        return !isFolderArchived(folder);
-      });
+    const ws = parseWorkspaceFolderSelectionId(selectedFolderId);
+    if (ws) {
+      const archiveView = isWorkspaceArchiveSelectionId(selectedFolderId);
+      const wsFolder = findWorkspaceFolder(foldersByCompany, ws.folderId);
+      const folderArchived = Boolean(wsFolder?.archived);
+      return (notesByFolder[ws.folderId] ?? [])
+        .filter((n) => {
+          if (archiveView && folderArchived) return true;
+          return archiveView ? n.archived : !n.archived;
+        })
+        .map(workspaceNoteToNote)
+        .sort((a, b) => a.order - b.order);
     }
-    return [...filtered].sort((a, b) => {
-      if (selectedFolderId === ALL_NOTES_ID) {
-        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-      }
-      return a.order - b.order;
-    });
-  }, [allNotes, folders, selectedFolderId]);
+    if (!selectedFolderId || selectedFolderId === MY_TASKS_ID) return [];
+    const filtered = allNotes.filter((n) => n.folderId === selectedFolderId);
+    return [...filtered].sort((a, b) => a.order - b.order);
+  }, [allNotes, folders, selectedFolderId, notesByFolder, foldersByCompany]);
+}
+
+function useWorkspaceTasks(
+  folderId: string | null,
+  archiveView: boolean,
+  folderArchived: boolean,
+) {
+  const tasksByFolder = useCompanyStore((s) => s.tasksByFolder);
+  return useMemo(() => {
+    if (!folderId) return [];
+    return (tasksByFolder[folderId] ?? [])
+      .filter((t) => {
+        if (archiveView && folderArchived) return true;
+        return archiveView ? t.archived : !t.archived;
+      })
+      .map(workspaceTaskToNote)
+      .sort((a, b) => a.order - b.order);
+  }, [tasksByFolder, folderId, archiveView, folderArchived]);
 }
 
 function NoteListItemContent({
   note,
   isSelected,
   showFolder,
+  workspaceFolderLabel,
   dragHandle,
   itemRef,
   itemStyle,
+  workspaceArchiveView = false,
 }: {
   note: Note;
   isSelected: boolean;
   showFolder?: boolean;
+  workspaceFolderLabel?: string | null;
   dragHandle?: React.ReactNode;
   itemRef?: (node: HTMLElement | null) => void;
   itemStyle?: React.CSSProperties;
+  workspaceArchiveView?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(note.title);
@@ -73,12 +112,27 @@ function NoteListItemContent({
   const deleteNote = useStore((s) => s.deleteNote);
   const duplicateNote = useStore((s) => s.duplicateNote);
   const archiveNote = useStore((s) => s.archiveNote);
+  const restoreNote = useStore((s) => s.restoreNote);
+  const togglePinNote = useStore((s) => s.togglePinNote);
   const folders = useStore((s) => s.folders);
+  const profilesByUserId = useCompanyStore((s) => s.profilesByUserId);
+  const membersByCompany = useCompanyStore((s) => s.membersByCompany);
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
+  const currentUserProfile = useAuthStore((s) => s.profile);
 
   const timeAgo = formatDistanceToNow(new Date(note.updatedAt), { addSuffix: true });
+  const taskMeta = note.workspaceTaskMeta;
+  const personalMeta =
+    note.personalTaskMeta ?? (note.isTask && !note.workspaceTaskMeta ? { status: 'todo' as const } : undefined);
   const folder = folders.find((f) => f.id === note.folderId);
   const displayTitle = note.title || 'Untitled';
-  const canArchive = folder && !isFolderArchived(folder);
+  const isWorkspaceItem =
+    note.id.startsWith('wsn:') || note.id.startsWith('wst:');
+  const canArchive =
+    !workspaceArchiveView && (isWorkspaceItem || Boolean(folder && !isFolderArchived(folder)));
+  const canRestoreWorkspace = workspaceArchiveView && isWorkspaceItem;
+  const dueRaw = taskMeta?.dueAt ?? note.scheduledAt;
+  const dueOverdue = Boolean(dueRaw && new Date(dueRaw).getTime() < Date.now());
 
   useEffect(() => {
     if (!editing) setEditTitle(note.title);
@@ -99,6 +153,15 @@ function NoteListItemContent({
   };
 
   const noteMenuItems = [
+    ...(!note.id.startsWith('wst:')
+      ? [
+          {
+            label: note.pinned ? 'Unpin from folder top' : 'Pin to folder top',
+            icon: <Star size={14} className={note.pinned ? 'fill-primary text-primary' : ''} />,
+            onClick: () => togglePinNote(note.id),
+          },
+        ]
+      : []),
     {
       label: 'Rename',
       icon: <Pencil size={14} />,
@@ -109,12 +172,22 @@ function NoteListItemContent({
       icon: <Copy size={14} />,
       onClick: () => duplicateNote(note.id),
     },
-    {
-      label: 'Archive',
-      icon: <Archive size={14} />,
-      disabled: !canArchive,
-      onClick: () => archiveNote(note.id),
-    },
+    ...(canRestoreWorkspace
+      ? [
+          {
+            label: 'Restore to workspace',
+            icon: <ArchiveRestore size={14} />,
+            onClick: () => restoreNote(note.id),
+          },
+        ]
+      : [
+          {
+            label: 'Archive',
+            icon: <Archive size={14} />,
+            disabled: !canArchive,
+            onClick: () => archiveNote(note.id),
+          },
+        ]),
     {
       label: 'Delete',
       icon: <Trash2 size={14} />,
@@ -169,12 +242,55 @@ function NoteListItemContent({
                 {displayTitle}
               </h3>
             )}
-            {note.scheduledAt && (
+            {note.scheduledAt && !showFolder && !taskMeta && (
               <CalendarClock size={12} className="shrink-0 text-primary opacity-70" />
             )}
           </div>
-          {showFolder && folder && (
-            <p className="text-[11px] text-muted-foreground/70 mt-0.5">{folder.name}</p>
+          {showFolder && (workspaceFolderLabel || folder) && (
+            <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+              {workspaceFolderLabel ?? folder?.name}
+            </p>
+          )}
+          {(taskMeta || personalMeta) && (
+            <p className="text-[11px] text-muted-foreground/80 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span
+                className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${WORKSPACE_TASK_STATUS_STYLES[(taskMeta ?? personalMeta)!.status]}`}
+              >
+                {WORKSPACE_TASK_STATUS_LABELS[(taskMeta ?? personalMeta)!.status]}
+              </span>
+              {taskMeta?.assigneeId && (
+                <span>
+                  {memberDisplayName(
+                    taskMeta.assigneeId,
+                    profilesByUserId,
+                    membersByCompany[taskMeta.companyId] ?? [],
+                    currentUserId,
+                    currentUserProfile,
+                  )}
+                </span>
+              )}
+              {personalMeta && currentUserId && (
+                <span>
+                  {memberDisplayName(
+                    currentUserId,
+                    profilesByUserId,
+                    [],
+                    currentUserId,
+                    currentUserProfile,
+                  )}{' '}
+                  (you)
+                </span>
+              )}
+              {((taskMeta?.dueAt ?? personalMeta?.dueAt) || note.scheduledAt) && (
+                <span className={dueOverdue ? 'text-destructive font-medium' : undefined}>
+                  · Due{' '}
+                  {format(
+                    new Date(taskMeta?.dueAt ?? personalMeta?.dueAt ?? note.scheduledAt!),
+                    'MMM d, h:mm a',
+                  )}
+                </span>
+              )}
+            </p>
           )}
           <p className="text-[11px] text-muted-foreground/60 mt-1">{timeAgo}</p>
         </div>
@@ -224,31 +340,94 @@ function NoteListItemContent({
   );
 }
 
-function PinnedLinksSection({ folderId }: { folderId: string }) {
+function FolderPinnedBar({
+  folderId,
+  notes,
+  onSelectNote,
+}: {
+  folderId: string;
+  notes: Note[];
+  onSelectNote: (id: string) => void;
+}) {
   const folderLinks = useStore((s) => s.folderLinks);
+  const linksByFolder = useCompanyStore((s) => s.linksByFolder);
   const togglePinFolderLink = useStore((s) => s.togglePinFolderLink);
+  const togglePinNote = useStore((s) => s.togglePinNote);
+  const ws = parseWorkspaceFolderSelectionId(folderId);
 
-  const links = useMemo(
-    () =>
-      folderLinks
-        .filter((l) => l.folderId === folderId && l.pinned)
-        .sort((a, b) => a.order - b.order),
-    [folderLinks, folderId],
+  const links = useMemo(() => {
+    if (ws) {
+      return (linksByFolder[ws.folderId] ?? [])
+        .filter((l) => l.pinned)
+        .map(workspaceLinkToFolderLink)
+        .sort((a, b) => a.order - b.order);
+    }
+    return folderLinks
+      .filter((l) => l.folderId === folderId && l.pinned)
+      .sort((a, b) => a.order - b.order);
+  }, [folderLinks, folderId, ws, linksByFolder]);
+
+  const pinnedNotes = useMemo(
+    () => notes.filter((n) => n.pinned && !n.isTask).sort((a, b) => a.order - b.order),
+    [notes],
   );
 
-  if (links.length === 0) return null;
+  if (links.length === 0 && pinnedNotes.length === 0) return null;
 
   return (
-    <div className="px-3 py-2 border-b border-border/50 bg-muted/20">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
-        <Star size={10} className="text-primary fill-primary" />
-        Pinned Links
-      </p>
-      <div className="space-y-1">
-        {links.map((link) => (
-          <PinnedLinkRow key={link.id} link={link} onUnpin={() => togglePinFolderLink(link.id)} />
-        ))}
-      </div>
+    <div className="px-3 py-2 border-b border-border/50 bg-muted/20 space-y-2">
+      {links.length > 0 && (
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
+            <Star size={10} className="text-primary fill-primary" />
+            Pinned links
+          </p>
+          <div className="space-y-1">
+            {links.map((link) => (
+              <PinnedLinkRow key={link.id} link={link} onUnpin={() => togglePinFolderLink(link.id)} />
+            ))}
+          </div>
+        </div>
+      )}
+      {pinnedNotes.length > 0 && (
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
+            <Star size={10} className="text-primary fill-primary" />
+            Pinned notes
+          </p>
+          <div className="space-y-1">
+            {pinnedNotes.map((note) => (
+              <button
+                key={note.id}
+                type="button"
+                onClick={() => onSelectNote(note.id)}
+                className="flex w-full items-center gap-2 text-xs text-foreground/90 hover:text-primary truncate py-1 cursor-pointer text-left"
+              >
+                <Star size={10} className="shrink-0 text-primary fill-primary" />
+                <span className="truncate flex-1">{note.title || 'Untitled'}</span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    togglePinNote(note.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.stopPropagation();
+                      togglePinNote(note.id);
+                    }
+                  }}
+                  className="p-0.5 rounded text-muted-foreground hover:text-foreground shrink-0"
+                  title="Unpin"
+                >
+                  <PinOff size={12} />
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -318,9 +497,11 @@ function PinnedLinkRow({ link, onUnpin }: { link: FolderLink; onUnpin: () => voi
 function SortableNoteListItem({
   note,
   isSelected,
+  workspaceArchiveView,
 }: {
   note: Note;
   isSelected: boolean;
+  workspaceArchiveView?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: note.id,
@@ -351,6 +532,7 @@ function SortableNoteListItem({
       dragHandle={dragHandle}
       itemRef={setNodeRef}
       itemStyle={style}
+      workspaceArchiveView={workspaceArchiveView}
     />
   );
 }
@@ -369,15 +551,94 @@ export function NoteList({
   const folders = useStore((s) => s.folders);
   const createNote = useStore((s) => s.createNote);
   const createFolderLink = useStore((s) => s.createFolderLink);
+  const createFolderSecret = useStore((s) => s.createFolderSecret);
   const requestFolderDialog = useStore((s) => s.requestFolderDialog);
   const notes = useDisplayedNotes();
-  const showAll = selectedFolderId === ALL_NOTES_ID;
+  const myTasks = useMyTasksList();
+  const showMyTasks = selectedFolderId === MY_TASKS_ID;
+  const isWorkspaceFolder = isWorkspaceFolderSelectionId(selectedFolderId);
+  const workspaceListTab = useStore((s) => s.workspaceListTab);
+  const setWorkspaceListTab = useStore((s) => s.setWorkspaceListTab);
+  const createWorkspaceTask = useStore((s) => s.createWorkspaceTask);
+  const createPersonalTask = useStore((s) => s.createPersonalTask);
+  const allNotes = useStore((s) => s.notes);
   const folder = folders.find((f) => f.id === selectedFolderId);
-  const listTitle = showAll ? 'All Notes' : folder?.name || 'Notes';
+  const foldersByCompany = useCompanyStore((s) => s.foldersByCompany);
+  const companies = useCompanyStore((s) => s.companies);
+  const membersByCompany = useCompanyStore((s) => s.membersByCompany);
+  const profilesByUserId = useCompanyStore((s) => s.profilesByUserId);
+  const isArchiveView = isWorkspaceArchiveSelectionId(selectedFolderId);
+  const isPersonalNoteFolder = Boolean(
+    folder && isNoteFolder(folder) && !isWorkspaceFolder && !showMyTasks,
+  );
+  const personalTasks = useMemo(() => {
+    if (!selectedFolderId || isWorkspaceFolder) return [];
+    return allNotes
+      .filter((n) => n.folderId === selectedFolderId && n.isTask && !n.isCalendarBlock)
+      .sort((a, b) => a.order - b.order);
+  }, [allNotes, selectedFolderId, isWorkspaceFolder]);
+  const wsFolderId = parseWorkspaceFolderSelectionId(selectedFolderId)?.folderId;
+  const wsFolder = wsFolderId ? findWorkspaceFolder(foldersByCompany, wsFolderId) : null;
+  const wsFolderArchived = Boolean(wsFolder?.archived);
+  const workspaceTasks = useWorkspaceTasks(wsFolderId ?? null, isArchiveView, wsFolderArchived);
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
+  const currentUserProfile = useAuthStore((s) => s.profile);
+  const wsCompanyId = useMemo(() => {
+    if (!wsFolderId) return null;
+    for (const list of Object.values(foldersByCompany)) {
+      const hit = list.find((f) => f.id === wsFolderId);
+      if (hit) return hit.companyId;
+    }
+    return null;
+  }, [foldersByCompany, wsFolderId]);
+  const workspaceMembers = wsCompanyId ? (membersByCompany[wsCompanyId] ?? []) : [];
+  const wsFolderName = useMemo(() => {
+    if (!wsFolderId) return null;
+    for (const list of Object.values(foldersByCompany)) {
+      const hit = list.find((f) => f.id === wsFolderId);
+      if (hit) return hit.name;
+    }
+    return null;
+  }, [foldersByCompany, wsFolderId]);
+  const wsCompanyName = wsCompanyId ? companies.find((c) => c.id === wsCompanyId)?.name ?? null : null;
+  const listTitle = showMyTasks
+    ? 'My Tasks'
+    : isArchiveView && wsFolderName
+      ? wsCompanyName
+        ? `${wsCompanyName} - ${wsFolderName}`
+        : wsFolderName
+      : wsFolderName ?? folder?.name ?? 'Notes';
   const noteIds = useMemo(() => notes.map((n) => n.id), [notes]);
+  const folderHasTaskTabs = isWorkspaceFolder || isPersonalNoteFolder;
+  const showingTasks =
+    showMyTasks ||
+    (isArchiveView && workspaceListTab === 'tasks') ||
+    (folderHasTaskTabs && workspaceListTab === 'tasks');
+  const listItems = showingTasks
+    ? showMyTasks
+      ? myTasks
+      : isPersonalNoteFolder
+        ? personalTasks
+        : workspaceTasks
+    : notes;
+  const workspaceFolderLabelFor = (note: Note) => {
+    const rawId = note.workspaceTaskMeta?.rawFolderId;
+    if (!rawId) return null;
+    for (const list of Object.values(foldersByCompany)) {
+      const hit = list.find((f) => f.id === rawId);
+      if (hit) return hit.name;
+    }
+    return null;
+  };
+
+  const listCountLabel = showingTasks
+    ? `${listItems.length} task${listItems.length === 1 ? '' : 's'}`
+  : `${notes.length} note${notes.length === 1 ? '' : 's'}`;
 
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showLinkDialog, setShowLinkDialog] = useState(false);
+  const [showSecretDialog, setShowSecretDialog] = useState(false);
+  const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
   const addButtonRef = useRef<HTMLButtonElement>(null);
 
   const handleNewNote = () => {
@@ -385,9 +646,8 @@ export function NoteList({
   };
 
   const handleSaveLink = (title: string, url: string) => {
-    const folderId = getNewNoteFolderId(selectedFolderId);
-    if (!folderId) return;
-    createFolderLink(folderId, title, url);
+    if (!selectedFolderId) return;
+    createFolderLink(selectedFolderId, title, url);
   };
 
   return (
@@ -397,11 +657,12 @@ export function NoteList({
           {onOpenNav && <MobileNavButton onClick={onOpenNav} />}
           <div className="min-w-0">
             <h2 className="text-sm font-semibold truncate">{listTitle}</h2>
-            <p className="text-xs text-muted-foreground">{notes.length} notes</p>
+            <p className="text-xs text-muted-foreground">{listCountLabel}</p>
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {showFolderOverviewToggle && onShowFolderOverview && (
+          {(showFolderOverviewToggle || isWorkspaceFolderSelectionId(selectedFolderId)) &&
+            onShowFolderOverview && (
             <button
               type="button"
               onClick={onShowFolderOverview}
@@ -410,57 +671,142 @@ export function NoteList({
               Folder
             </button>
           )}
-          <button
-            ref={addButtonRef}
-            onClick={() => {
-              if (showAll) handleNewNote();
-              else setShowAddMenu((v) => !v);
-            }}
-            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          >
-            <Plus size={18} />
-          </button>
+          {!showMyTasks && !isArchiveView && (
+            <button
+              ref={addButtonRef}
+              onClick={() => setShowAddMenu((v) => !v)}
+              className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            >
+              <Plus size={18} />
+            </button>
+          )}
         </div>
       </div>
 
-      {showAddMenu && !showAll && (
+      {!showMyTasks &&
+        selectedFolderId &&
+        (isWorkspaceFolder || isPersonalNoteFolder || (folder && !isFolderArchived(folder))) && (
+          <FolderPinnedBar
+            folderId={selectedFolderId}
+            notes={notes}
+            onSelectNote={(id) => useStore.getState().selectNote(id)}
+          />
+        )}
+
+      {(folderHasTaskTabs || isArchiveView) && !showMyTasks && (
+        <div className="flex border-b border-border px-2">
+          <button
+            type="button"
+            onClick={() => setWorkspaceListTab('notes')}
+            className={`flex-1 py-4 text-xs font-medium border-b-2 transition-colors cursor-pointer ${
+              workspaceListTab === 'notes'
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Notes
+            <span className="ml-1 opacity-50 tabular-nums">{notes.length}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setWorkspaceListTab('tasks')}
+            className={`flex-1 py-4 text-xs font-medium border-b-2 transition-colors cursor-pointer ${
+              workspaceListTab === 'tasks'
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Tasks
+            <span className="ml-1 opacity-50 tabular-nums">
+              {isPersonalNoteFolder ? personalTasks.length : workspaceTasks.length}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {showAddMenu && !showMyTasks && (
         <AddItemMenu
           anchorRef={addButtonRef}
           onClose={() => setShowAddMenu(false)}
           onNewNote={handleNewNote}
+          newNoteLabel={isWorkspaceFolder ? 'Add Note' : 'New Note'}
+          onNewTask={
+            isWorkspaceFolder
+              ? () => setShowAddTaskDialog(true)
+              : isPersonalNoteFolder
+                ? () => setShowAddTaskDialog(true)
+                : undefined
+          }
           onQuickLink={() => setShowLinkDialog(true)}
-          onSecret={() => requestFolderDialog('secret')}
+          onSecret={() => {
+            if (isWorkspaceFolder) setShowSecretDialog(true);
+            else requestFolderDialog('secret');
+          }}
         />
       )}
+
+      <WorkspaceAddTaskDialog
+        open={showAddTaskDialog}
+        onClose={() => setShowAddTaskDialog(false)}
+        members={workspaceMembers}
+        profilesByUserId={profilesByUserId}
+        currentUserId={currentUserId}
+        currentUserProfile={currentUserProfile}
+        onSave={(title, assigneeId) => {
+          if (isPersonalNoteFolder && currentUserId) {
+            createPersonalTask(title);
+          } else {
+            createWorkspaceTask(assigneeId, title);
+          }
+        }}
+        soloAssignee={isPersonalNoteFolder}
+      />
 
       <QuickLinkDialog
         open={showLinkDialog}
         onClose={() => setShowLinkDialog(false)}
         onSave={handleSaveLink}
-        folderName={folder?.name}
+        folderName={wsFolderName ?? folder?.name}
+      />
+
+      <SecretDialog
+        open={showSecretDialog}
+        onClose={() => setShowSecretDialog(false)}
+        onSave={(data: SecretFormData) => {
+          if (selectedFolderId) createFolderSecret(selectedFolderId, data);
+          setShowSecretDialog(false);
+        }}
+        folderName={wsFolderName ?? folder?.name}
       />
 
       <div className="flex-1 overflow-y-auto">
-        {!showAll && selectedFolderId && folder && !isFolderArchived(folder) && (
-          <PinnedLinksSection folderId={selectedFolderId} />
-        )}
-        {notes.length === 0 ? (
+        {listItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center px-6">
-            <p className="text-sm text-muted-foreground">No notes in this folder</p>
-            <button
-              onClick={handleNewNote}
-              className="mt-3 text-sm text-primary hover:underline cursor-pointer"
-            >
-              Create a note
-            </button>
+            <p className="text-sm text-muted-foreground">
+              {showingTasks ? 'No tasks here yet' : 'No notes in this folder'}
+            </p>
+            {!showMyTasks && !isArchiveView && (
+              <button
+                onClick={() =>
+                  showingTasks && folderHasTaskTabs
+                    ? setShowAddTaskDialog(true)
+                    : handleNewNote()
+                }
+                className="mt-3 text-sm text-primary hover:underline cursor-pointer"
+              >
+                {showingTasks ? 'Add a task' : 'Create a note'}
+              </button>
+            )}
           </div>
-        ) : showAll ? (
-          notes.map((note) => (
+        ) : showingTasks ? (
+          listItems.map((note) => (
             <NoteListItemContent
               key={note.id}
               note={note}
               isSelected={selectedNoteId === note.id}
-              showFolder
+              showFolder={showMyTasks}
+              workspaceFolderLabel={showMyTasks ? workspaceFolderLabelFor(note) : null}
+              workspaceArchiveView={isArchiveView}
             />
           ))
         ) : (
@@ -470,6 +816,7 @@ export function NoteList({
                 key={note.id}
                 note={note}
                 isSelected={selectedNoteId === note.id}
+                workspaceArchiveView={isArchiveView}
               />
             ))}
           </SortableContext>

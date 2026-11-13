@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useStore } from '../store/useStore';
 import { isSupabaseConfigured } from '../sync/supabaseClient';
+import { useCompanyStore } from '../store/companyStore';
 
 /** Load notes and subscribe to cloud changes when the user signs in. */
 export function useCloudSync() {
@@ -15,16 +16,19 @@ export function useCloudSync() {
   useEffect(() => {
     if (authLoading) return;
 
-    const isElectron = Boolean(window.electronAPI?.isElectron);
-    const needsAuth = !isElectron && isSupabaseConfigured();
-    if (needsAuth && !userId) return;
+    if (isSupabaseConfigured() && !userId) return;
 
     let cancelled = false;
     void (async () => {
       await rehydrate(userId);
       if (cancelled) return;
-      if (userId) startCloudSync(userId);
-      else stopCloudSync();
+      if (userId) {
+        startCloudSync(userId);
+        void useCompanyStore.getState().refreshCompanies();
+      } else {
+        stopCloudSync();
+        useCompanyStore.getState().clear();
+      }
     })();
 
     return () => {

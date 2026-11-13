@@ -5,34 +5,35 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
 import type { EventClickArg, EventDropArg, DateSelectArg } from '@fullcalendar/core';
-import type { EventResizeDoneArg, DropArg } from '@fullcalendar/interaction';
-import { ListPlus, Trash2, Archive } from 'lucide-react';
+import type { EventResizeDoneArg } from '@fullcalendar/interaction';
+import { Trash2, Archive } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { isFolderArchived } from '../types';
-import { getEventStyle } from '../constants/calendarColors';
+import { useCompanyStore } from '../store/companyStore';
+import { defaultCalendarColorForPalette } from '../utils/defaultCalendarColor';
+import { resolveCalendarEventStyle } from '../utils/themeCalendarColor';
+import { resolveLinkedTaskTitle } from '../utils/linkedTaskResolve';
 import { Editor } from './Editor';
 import { ContextMenu } from './ContextMenu';
 import { ConfirmDialog } from './ConfirmDialog';
-import { AddTasksPanel } from './AddTasksPanel';
 import { MobileNavButton } from './MobileNavButton';
 import { useIsMobile } from '../hooks/useIsMobile';
 
 export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const isMobile = useIsMobile();
   const notes = useStore((s) => s.notes);
-  const folders = useStore((s) => s.folders);
+  const tasksByFolder = useCompanyStore((s) => s.tasksByFolder);
+  const myAssignedTasks = useCompanyStore((s) => s.myAssignedTasks);
   const theme = useStore((s) => s.theme);
+  const colorPalette = useStore((s) => s.colorPalette);
   const createNote = useStore((s) => s.createNote);
   const updateNote = useStore((s) => s.updateNote);
   const deleteNote = useStore((s) => s.deleteNote);
-  const archiveNote = useStore((s) => s.archiveNote);
   const selectNote = useStore((s) => s.selectNote);
   const setViewMode = useStore((s) => s.setViewMode);
 
   const calendarRef = useRef<FullCalendar>(null);
   const calendarContainerRef = useRef<HTMLDivElement>(null);
 
-  const [showAddTasks, setShowAddTasks] = useState(false);
   const [panelNoteId, setPanelNoteId] = useState<string | null>(null);
   const [timeTick, setTimeTick] = useState(0);
   const [eventMenu, setEventMenu] = useState<{ x: number; y: number; noteId: string; title: string } | null>(null);
@@ -40,27 +41,41 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
 
   const isDark = theme === 'dark';
 
+  const applyEventColors = useCallback(
+    (eventId: string) => {
+      const block = notes.find((n) => n.id === eventId);
+      if (!block) return;
+      const api = calendarRef.current?.getApi();
+      const ev = api?.getEventById(eventId);
+      if (!ev) return;
+      const style = resolveCalendarEventStyle(block.calendarColor, isDark, colorPalette);
+      ev.setProp('backgroundColor', style.backgroundColor);
+      ev.setProp('borderColor', style.borderColor);
+      ev.setProp('textColor', style.textColor);
+    },
+    [notes, isDark, colorPalette],
+  );
+
   useEffect(() => {
     const id = setInterval(() => setTimeTick((t) => t + 1), 30_000);
     return () => clearInterval(id);
   }, []);
 
-  const getFolderColor = (folderId: string | null) =>
-    (folderId ? folders.find((f) => f.id === folderId)?.calendarColor : null) ?? 'blue';
-
   const events = useMemo(() => {
     return notes
-      .filter((n) => {
-        if (!n.scheduledAt) return false;
-        if (!n.folderId) return true;
-        const folder = folders.find((f) => f.id === n.folderId);
-        return !isFolderArchived(folder);
-      })
+      .filter((n) => n.isCalendarBlock && n.scheduledAt)
       .map((n) => {
-        const style = getEventStyle(getFolderColor(n.folderId), isDark);
+        const title = n.linkedTaskId
+          ? resolveLinkedTaskTitle(n.linkedTaskId, notes, tasksByFolder, myAssignedTasks)
+          : n.title || 'Untitled';
+        const style = resolveCalendarEventStyle(
+          n.calendarColor ?? defaultCalendarColorForPalette(colorPalette),
+          isDark,
+          colorPalette,
+        );
         return {
           id: n.id,
-          title: n.title || 'Untitled',
+          title: title || 'Untitled',
           start: n.scheduledAt!,
           end: n.scheduledEnd || undefined,
           backgroundColor: style.backgroundColor,
@@ -68,7 +83,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
           textColor: style.textColor,
         };
       });
-  }, [notes, folders, isDark]);
+  }, [notes, tasksByFolder, myAssignedTasks, isDark, colorPalette]);
 
   const handleEventClick = (info: EventClickArg) => {
     setPanelNoteId(info.event.id);
@@ -78,12 +93,15 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
     const calendarApi = calendarRef.current?.getApi();
     calendarApi?.unselect();
 
-    const noteId = createNote(null, 'New Task', { keepView: true });
+    const noteId = createNote(null, 'Planning', { keepView: true, calendarBlock: true });
     updateNote(noteId, {
       scheduledAt: info.start.toISOString(),
       scheduledEnd: info.end?.toISOString(),
-      isTask: true,
-      calendarColor: 'blue',
+      isTask: false,
+      isCalendarBlock: true,
+      folderId: null,
+      linkedTaskId: null,
+      calendarColor: defaultCalendarColorForPalette(colorPalette),
     });
     setPanelNoteId(noteId);
   };
@@ -92,8 +110,8 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
     updateNote(info.event.id, {
       scheduledAt: info.event.start?.toISOString(),
       scheduledEnd: info.event.end?.toISOString(),
-      isTask: true,
     });
+    applyEventColors(info.event.id);
   };
 
   const handleEventResize = (info: EventResizeDoneArg) => {
@@ -101,51 +119,29 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
       scheduledAt: info.event.start?.toISOString(),
       scheduledEnd: info.event.end?.toISOString(),
     });
-  };
-
-  const handleDrop = (info: DropArg) => {
-    const noteId = info.draggedEl.getAttribute('data-note-id');
-    if (!noteId || !info.date) return;
-    const note = notes.find((n) => n.id === noteId);
-    if (!note) return;
-    const start = info.date;
-    const end = new Date(start.getTime() + 3600000);
-    updateNote(noteId, {
-      scheduledAt: start.toISOString(),
-      scheduledEnd: end.toISOString(),
-      isTask: true,
-      calendarColor: getFolderColor(note.folderId),
-    });
+    applyEventColors(info.event.id);
   };
 
   const handleExpand = () => {
     if (!panelNoteId) return;
-    selectNote(panelNoteId);
+    const block = notes.find((n) => n.id === panelNoteId);
+    const target = block?.linkedTaskId ?? panelNoteId;
+    selectNote(target);
     setViewMode('notes');
     setPanelNoteId(null);
   };
 
-  const confirmDeleteEvent = () => {
-    if (!deleteTarget) return;
-    deleteNote(deleteTarget.noteId);
-    if (panelNoteId === deleteTarget.noteId) {
-      setPanelNoteId(null);
-    }
-    setDeleteTarget(null);
-  };
-
-  const handleArchiveEvent = (noteId: string) => {
-    archiveNote(noteId);
+  const removeFromCalendar = (noteId: string) => {
+    deleteNote(noteId);
     if (panelNoteId === noteId) {
       setPanelNoteId(null);
     }
   };
 
-  const canArchiveEvent = (noteId: string) => {
-    const note = notes.find((n) => n.id === noteId);
-    if (!note) return false;
-    const folder = folders.find((f) => f.id === note.folderId);
-    return folder && !isFolderArchived(folder);
+  const confirmDeleteEvent = () => {
+    if (!deleteTarget) return;
+    removeFromCalendar(deleteTarget.noteId);
+    setDeleteTarget(null);
   };
 
   const slotLaneClassNames = useCallback(
@@ -170,24 +166,12 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             <div className="min-w-0">
               <h2 className="text-lg font-medium">Calendar</h2>
               <p className="text-sm text-muted-foreground font-normal hidden sm:block">
-                Click or drag on calendar to add · Drag tasks to schedule · Right-click for options
+                Drag on the calendar to book time · Link blocks to tasks (same task can appear many times) ·
+                Right-click to remove a block
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setShowAddTasks((v) => !v)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-normal transition-opacity cursor-pointer shrink-0 ${
-              showAddTasks
-                ? 'bg-muted text-foreground'
-                : 'bg-primary text-primary-foreground hover:opacity-90'
-            }`}
-          >
-            <ListPlus size={16} />
-            <span className="hidden sm:inline">Add Tasks</span>
-          </button>
         </div>
-
-        <AddTasksPanel open={showAddTasks} onClose={() => setShowAddTasks(false)} />
 
         <div ref={calendarContainerRef} className="flex-1 p-1 md:p-4 calendar-container overflow-auto min-h-0">
           <FullCalendar
@@ -209,7 +193,6 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             }
             events={events}
             editable
-            droppable
             selectable
             selectMirror
             select={handleDateSelect}
@@ -223,17 +206,22 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             eventClick={handleEventClick}
             eventDrop={handleEventDrop}
             eventResize={handleEventResize}
-            drop={handleDrop}
+            eventDragStop={(info) => applyEventColors(info.event.id)}
             eventDurationEditable
             eventDidMount={(info) => {
               info.el.dataset.noteId = info.event.id;
               info.el.title = 'Click to edit · Right-click for options';
               info.el.addEventListener('dblclick', (e) => {
                 e.stopPropagation();
-                const newTitle = prompt('Rename task:', info.event.title);
-                if (newTitle?.trim()) {
-                  updateNote(info.event.id, { title: newTitle.trim() });
-                }
+                const block = notes.find((n) => n.id === info.event.id);
+                if (!block) return;
+                const current =
+                  block.linkedTaskId
+                    ? resolveLinkedTaskTitle(block.linkedTaskId, notes, tasksByFolder, myAssignedTasks)
+                    : block.title || 'Planning';
+                const newTitle = prompt('Rename block label (unlink to edit linked task title):', current);
+                if (!newTitle?.trim() || block.linkedTaskId) return;
+                updateNote(info.event.id, { title: newTitle.trim() });
               });
               info.el.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
@@ -256,8 +244,10 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             key={panelNoteId}
             noteId={panelNoteId}
             compact
+            calendarBlockMode
             onExpand={handleExpand}
             onClose={() => setPanelNoteId(null)}
+            onActiveNoteIdChange={(id) => setPanelNoteId(id || null)}
           />
         </aside>
       )}
@@ -269,17 +259,20 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
           onClose={() => setEventMenu(null)}
           items={[
             {
-              label: 'Archive',
+              label: 'Remove from calendar',
               icon: <Archive size={14} />,
-              disabled: !canArchiveEvent(eventMenu.noteId),
-              onClick: () => handleArchiveEvent(eventMenu.noteId),
+              onClick: () => {
+                removeFromCalendar(eventMenu.noteId);
+                setEventMenu(null);
+              },
             },
             {
-              label: 'Delete',
+              label: 'Delete block',
               icon: <Trash2 size={14} />,
               danger: true,
               onClick: () => {
                 setDeleteTarget({ noteId: eventMenu.noteId, title: eventMenu.title });
+                setEventMenu(null);
               },
             },
           ]}
@@ -288,10 +281,10 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
 
       <ConfirmDialog
         open={!!deleteTarget}
-        title="Delete task?"
+        title="Delete block?"
         message={
           deleteTarget
-            ? `"${deleteTarget.title}" will be permanently deleted.`
+            ? `"${deleteTarget.title}" will be removed from your calendar. The linked task is not deleted.`
             : ''
         }
         confirmLabel="Delete"

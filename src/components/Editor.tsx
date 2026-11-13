@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useMobileKeyboardInset } from '../hooks/useMobileKeyboardInset';
 import { useIsMobile, usePrefersCoarsePointer } from '../hooks/useIsMobile';
 import { ImageLightbox, useNoteImageLightbox, type LightboxImage } from './ImageLightbox';
@@ -6,25 +6,40 @@ import { IMAGE_SRC_PLACEHOLDER } from '../utils/noteImageStorage';
 import {
   Trash2,
   Pin,
-  FileCode2,
   Maximize2,
   X,
   File,
   Download,
   Copy,
   Archive,
+  ArchiveRestore,
   ChevronLeft,
   MoreVertical,
   PanelLeft,
 } from 'lucide-react';
 import { OverflowMenu } from './OverflowMenu';
 import { useStore } from '../store/useStore';
+import { useResolvedNote } from '../hooks/useResolvedNote';
+import {
+  isWorkspaceArchiveSelectionId,
+  isWorkspaceFolderSelectionId,
+  isWorkspaceNoteSelectionId,
+  isWorkspaceTaskSelectionId,
+  parseWorkspaceFolderSelectionId,
+  parseWorkspaceNoteSelectionId,
+  parseWorkspaceTaskSelectionId,
+} from '../types/company';
+import { workspaceFolderToFolder } from '../utils/workspaceMappers';
+import { useCompanyStore } from '../store/companyStore';
 import { TaskSchedulePanel } from './TaskSchedulePanel';
-import { TagInput } from './TagInput';
 import { MarkdownEditor } from './MarkdownEditor';
 import { RichTextEditor, insertImagesFromFiles } from './RichTextEditor';
 import { FolderOverview } from './FolderOverview';
-import { ALL_NOTES_ID, isFolderArchived } from '../types';
+import { MY_TASKS_ID, isFolderArchived } from '../types';
+import { useAuthStore } from '../store/authStore';
+import { WorkspaceTaskMetaBar } from './WorkspaceTaskMetaBar';
+import { NoteCollaborationBanner } from './NoteCollaborationBanner';
+import { useWorkspaceNoteCollaboration } from '../hooks/useWorkspaceNoteCollaboration';
 import type { NoteAttachment } from '../types';
 import type { Editor as TiptapEditor } from '@tiptap/core';
 import {
@@ -38,9 +53,12 @@ interface EditorProps {
   compact?: boolean;
   onExpand?: () => void;
   onClose?: () => void;
+  onActiveNoteIdChange?: (id: string) => void;
   onMobileBack?: () => void;
   onOpenNav?: () => void;
   landscapeFocus?: boolean;
+  /** Calendar side panel: edits may target a linked task; delete removes block only. */
+  calendarBlockMode?: boolean;
 }
 
 function isImageAttachment(attachment: NoteAttachment) {
@@ -59,20 +77,28 @@ export function Editor({
   compact,
   onExpand,
   onClose,
+  onActiveNoteIdChange,
   onMobileBack,
   onOpenNav,
   landscapeFocus,
+  calendarBlockMode,
 }: EditorProps = {}) {
   const selectedNoteId = useStore((s) => s.selectedNoteId);
   const selectedFolderId = useStore((s) => s.selectedFolderId);
   const activeNoteId = noteIdProp ?? selectedNoteId;
-  const notes = useStore((s) => s.notes);
+  const calendarBlock = useStore((s) =>
+    activeNoteId ? s.notes.find((n) => n.id === activeNoteId && n.isCalendarBlock) : undefined,
+  );
+  const note = useResolvedNote(activeNoteId);
+  const contentEditId =
+    calendarBlock?.linkedTaskId && calendarBlockMode ? calendarBlock.linkedTaskId : activeNoteId;
   const updateNote = useStore((s) => s.updateNote);
+  const patchPersonalTask = useStore((s) => s.patchPersonalTask);
   const deleteNote = useStore((s) => s.deleteNote);
   const duplicateNote = useStore((s) => s.duplicateNote);
   const archiveNote = useStore((s) => s.archiveNote);
+  const restoreNote = useStore((s) => s.restoreNote);
   const togglePinNote = useStore((s) => s.togglePinNote);
-  const toggleNoteEditorMode = useStore((s) => s.toggleNoteEditorMode);
   const addAttachment = useStore((s) => s.addAttachment);
   const removeAttachment = useStore((s) => s.removeAttachment);
   const openNoteByTitle = useStore((s) => s.openNoteByTitle);
@@ -90,7 +116,24 @@ export function Editor({
   const { image: lightboxImage, close: closeLightbox, openImage: openLightbox } =
     useNoteImageLightbox(editorScrollRef, imageLightboxEnabled);
 
-  const note = notes.find((n) => n.id === activeNoteId);
+  const wsFolderId = parseWorkspaceFolderSelectionId(selectedFolderId)?.folderId ?? null;
+  const foldersByCompany = useCompanyStore((s) => s.foldersByCompany);
+  const tasksByFolder = useCompanyStore((s) => s.tasksByFolder);
+  const membersByCompany = useCompanyStore((s) => s.membersByCompany);
+  const companies = useCompanyStore((s) => s.companies);
+  const profilesByUserId = useCompanyStore((s) => s.profilesByUserId);
+  const patchWorkspaceTask = useCompanyStore((s) => s.patchWorkspaceTask);
+  const openWorkspaceTask = useStore((s) => s.openWorkspaceTask);
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
+  const currentUserProfile = useAuthStore((s) => s.profile);
+  const wsFolderRaw = useMemo(() => {
+    if (!wsFolderId) return null;
+    for (const list of Object.values(foldersByCompany)) {
+      const hit = list.find((f) => f.id === wsFolderId);
+      if (hit) return hit;
+    }
+    return null;
+  }, [foldersByCompany, wsFolderId]);
 
   const openNoteImagePreview = useCallback(
     (target: LightboxImage) => {
@@ -108,37 +151,158 @@ export function Editor({
     },
     [note, openLightbox],
   );
-  const folder = note ? folders.find((f) => f.id === note.folderId) : null;
+  const myAssignedTasks = useCompanyStore((s) => s.myAssignedTasks);
+
+  const workspaceTaskFolderId = useMemo(() => {
+    if (note?.workspaceTaskMeta?.rawFolderId) return note.workspaceTaskMeta.rawFolderId;
+    if (note?.folderId && isWorkspaceFolderSelectionId(note.folderId)) {
+      return parseWorkspaceFolderSelectionId(note.folderId)?.folderId ?? null;
+    }
+    if (note?.folderId && isWorkspaceNoteSelectionId(note.id)) {
+      const raw = note.folderId;
+      return parseWorkspaceFolderSelectionId(raw)?.folderId ?? null;
+    }
+    return wsFolderId;
+  }, [note?.folderId, note?.workspaceTaskMeta?.rawFolderId, note?.id, wsFolderId]);
+
+  const workspaceTaskSuggestions = useMemo(() => {
+    if (workspaceTaskFolderId) {
+      return (tasksByFolder[workspaceTaskFolderId] ?? []).map((t) => ({
+        id: t.id,
+        title: t.title || 'Untitled task',
+        folderId: t.folderId,
+      }));
+    }
+    if (myAssignedTasks.length > 0) {
+      return myAssignedTasks.map((t) => ({
+        id: t.id,
+        title: t.title || 'Untitled task',
+        folderId: t.folderId,
+      }));
+    }
+    return [];
+  }, [tasksByFolder, workspaceTaskFolderId, myAssignedTasks]);
+
+  const linkedTaskSelectionId = calendarBlock?.linkedTaskId ?? null;
+
+  const workspaceTaskMeta = useMemo(() => {
+    const selectionId =
+      linkedTaskSelectionId && isWorkspaceTaskSelectionId(linkedTaskSelectionId)
+        ? linkedTaskSelectionId
+        : isWorkspaceTaskSelectionId(activeNoteId ?? '')
+          ? activeNoteId
+          : null;
+    if (!selectionId) return null;
+    const raw = parseWorkspaceTaskSelectionId(selectionId);
+    if (!raw) return null;
+    for (const rows of Object.values(tasksByFolder)) {
+      const hit = rows.find((t) => t.id === raw.taskId);
+      if (hit) return hit;
+    }
+    return useCompanyStore.getState().myAssignedTasks.find((t) => t.id === raw.taskId) ?? null;
+  }, [activeNoteId, linkedTaskSelectionId, tasksByFolder]);
+
+  const workspaceTaskId = useMemo(() => {
+    if (linkedTaskSelectionId && isWorkspaceTaskSelectionId(linkedTaskSelectionId)) {
+      return parseWorkspaceTaskSelectionId(linkedTaskSelectionId)?.taskId ?? null;
+    }
+    if (!activeNoteId || !isWorkspaceTaskSelectionId(activeNoteId)) return null;
+    return parseWorkspaceTaskSelectionId(activeNoteId)?.taskId ?? null;
+  }, [activeNoteId, linkedTaskSelectionId]);
+
+  const folder = note
+    ? isWorkspaceNoteSelectionId(note.id) && wsFolderRaw
+      ? workspaceFolderToFolder(wsFolderRaw)
+      : folders.find((f) => f.id === note.folderId)
+    : isWorkspaceFolderSelectionId(selectedFolderId) && wsFolderRaw
+      ? workspaceFolderToFolder(wsFolderRaw)
+      : null;
+
+  const folderBreadcrumb = useMemo(() => {
+    if (note?.workspaceTaskMeta) {
+      const meta = note.workspaceTaskMeta;
+      const company = companies.find((c) => c.id === meta.companyId);
+      let folderName: string | null = null;
+      for (const list of Object.values(foldersByCompany)) {
+        const hit = list.find((f) => f.id === meta.rawFolderId);
+        if (hit) {
+          folderName = hit.name;
+          break;
+        }
+      }
+      if (company && folderName) return `${company.name} / ${folderName}`;
+      return folderName ?? company?.name ?? null;
+    }
+    return folder?.name ?? null;
+  }, [note?.workspaceTaskMeta, companies, foldersByCompany, folder?.name]);
   const isMarkdown = note?.contentType === 'markdown';
-  const canArchive = folder && !isFolderArchived(folder);
+
+  const workspaceNoteId = useMemo(() => {
+    if (!note || !isWorkspaceNoteSelectionId(note.id)) return null;
+    return parseWorkspaceNoteSelectionId(note.id)?.noteId ?? null;
+  }, [note]);
+
+  useWorkspaceNoteCollaboration(workspaceNoteId, Boolean(note && !isMarkdown));
+
+  const collaborationConflict = useCompanyStore((s) =>
+    workspaceNoteId ? s.workspaceNoteConflicts[workspaceNoteId] : undefined,
+  );
+  const resolveWorkspaceNoteLoadTheirs = useCompanyStore((s) => s.resolveWorkspaceNoteLoadTheirs);
+  const resolveWorkspaceNoteKeepMine = useCompanyStore((s) => s.resolveWorkspaceNoteKeepMine);
+  const clearWorkspaceNoteConflict = useCompanyStore((s) => s.clearWorkspaceNoteConflict);
+  const workspaceArchiveView = isWorkspaceArchiveSelectionId(selectedFolderId);
+  const isWorkspaceItem = Boolean(
+    note && (isWorkspaceNoteSelectionId(note.id) || isWorkspaceTaskSelectionId(note.id)),
+  );
+  const canArchive =
+    !workspaceArchiveView &&
+    (isWorkspaceItem || Boolean(folder && !isFolderArchived(folder)));
+  const canRestoreWorkspace = workspaceArchiveView && isWorkspaceItem;
 
   const handleTitleChange = useCallback(
     (title: string) => {
-      if (activeNoteId) updateNote(activeNoteId, { title });
+      if (contentEditId) updateNote(contentEditId, { title });
     },
-    [activeNoteId, updateNote]
+    [contentEditId, updateNote]
   );
 
   const handleRichUpdate = useCallback(
     (html: string) => {
-      if (!activeNoteId) return;
-      const currentNote = useStore.getState().notes.find((n) => n.id === activeNoteId);
-      if (!currentNote) return;
+      if (!contentEditId || !note) return;
 
-      updateNote(activeNoteId, { content: html });
+      updateNote(contentEditId, { content: html });
+
+      if (isWorkspaceTaskSelectionId(contentEditId)) return;
+
+      let attachments: NoteAttachment[] = [];
+      if (isWorkspaceNoteSelectionId(contentEditId)) {
+        const raw = parseWorkspaceNoteSelectionId(contentEditId);
+        if (!raw) return;
+        for (const list of Object.values(useCompanyStore.getState().notesByFolder)) {
+          const hit = list.find((n) => n.id === raw.noteId);
+          if (hit) {
+            attachments = hit.attachments ?? [];
+            break;
+          }
+        }
+      } else {
+        const currentNote = useStore.getState().notes.find((n) => n.id === contentEditId);
+        if (!currentNote) return;
+        attachments = currentNote.attachments;
+      }
 
       const idsInContent = getEmbeddedImageAttachmentIds(html);
       const srcsInContent = getEmbeddedImageSrcs(html);
-      for (const attachment of currentNote.attachments) {
+      for (const attachment of attachments) {
         if (!isImageAttachment(attachment)) continue;
         const stillEmbedded =
           (attachment.id && idsInContent.has(attachment.id)) || srcsInContent.has(attachment.dataUrl);
         if (!stillEmbedded) {
-          removeAttachment(activeNoteId, attachment.id);
+          removeAttachment(contentEditId, attachment.id);
         }
       }
     },
-    [activeNoteId, updateNote, removeAttachment],
+    [contentEditId, note, updateNote, removeAttachment],
   );
 
   const handleRemoveAttachment = useCallback(
@@ -162,7 +326,12 @@ export function Editor({
   const handleAddAttachment = useCallback(
     async (file: File): Promise<NoteAttachment | null> => {
       if (!activeNoteId) return null;
-      return addAttachment(activeNoteId, file);
+      try {
+        return await addAttachment(activeNoteId, file);
+      } catch (err) {
+        window.alert(err instanceof Error ? err.message : 'Could not add image');
+        return null;
+      }
     },
     [activeNoteId, addAttachment],
   );
@@ -201,7 +370,7 @@ export function Editor({
     if (
       !compact &&
       selectedFolderId &&
-      selectedFolderId !== ALL_NOTES_ID &&
+      selectedFolderId !== MY_TASKS_ID &&
       !noteIdProp
     ) {
       return (
@@ -228,30 +397,37 @@ export function Editor({
   const isMobileEditor = isMobileEditorLayout;
 
   const mobileOverflowItems = [
-    {
-      label: note.pinned ? 'Unpin note' : 'Pin note',
-      icon: <Pin size={14} />,
-      onClick: () => togglePinNote(note.id),
-    },
+    ...(!isWorkspaceTaskSelectionId(note.id)
+      ? [
+          {
+            label: note.pinned ? 'Unpin note' : 'Pin note',
+            icon: <Pin size={14} />,
+            onClick: () => togglePinNote(note.id),
+          },
+        ]
+      : []),
     {
       label: 'Duplicate note',
       icon: <Copy size={14} />,
       onClick: () => duplicateNote(note.id),
     },
-    ...(canArchive
+    ...(canRestoreWorkspace
       ? [
           {
-            label: 'Archive note',
-            icon: <Archive size={14} />,
-            onClick: () => archiveNote(note.id),
+            label: 'Restore to workspace',
+            icon: <ArchiveRestore size={14} />,
+            onClick: () => restoreNote(note.id),
           },
         ]
-      : []),
-    {
-      label: isMarkdown ? 'Switch to rich text' : 'Switch to markdown',
-      icon: <FileCode2 size={14} />,
-      onClick: () => toggleNoteEditorMode(note.id),
-    },
+      : canArchive
+        ? [
+            {
+              label: 'Archive note',
+              icon: <Archive size={14} />,
+              onClick: () => archiveNote(note.id),
+            },
+          ]
+        : []),
     {
       label: 'Delete note',
       icon: <Trash2 size={14} />,
@@ -289,8 +465,8 @@ export function Editor({
               </button>
             )}
             <div className="flex-1 min-w-0 pt-0.5">
-              {folder && (
-                <p className="text-[11px] text-muted-foreground truncate mb-0.5">{folder.name}</p>
+              {folderBreadcrumb && (
+                <p className="text-[11px] text-muted-foreground truncate mb-0.5">{folderBreadcrumb}</p>
               )}
               <input
                 value={note.title}
@@ -321,7 +497,9 @@ export function Editor({
         <div className={`flex items-center justify-between ${padding} pt-4 pb-2 border-b border-border/50 gap-2`}>
           <div className="flex items-center gap-1 min-w-0 flex-1">
             <div className="flex-1 min-w-0">
-              {!compact && folder && <p className="text-xs text-muted-foreground mb-1">{folder.name}</p>}
+              {!compact && folderBreadcrumb && (
+                <p className="text-xs text-muted-foreground mb-1">{folderBreadcrumb}</p>
+              )}
               <input
                 value={note.title}
                 onChange={(e) => handleTitleChange(e.target.value)}
@@ -353,15 +531,17 @@ export function Editor({
             )}
             {!compact && (
               <>
-                <button
-                  onClick={() => togglePinNote(note.id)}
-                  className={`p-2 rounded-md transition-colors cursor-pointer ${
-                    note.pinned ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:bg-muted'
-                  }`}
-                  title={note.pinned ? 'Unpin' : 'Pin note'}
-                >
-                  <Pin size={16} />
-                </button>
+                {!isWorkspaceTaskSelectionId(note.id) && (
+                  <button
+                    onClick={() => togglePinNote(note.id)}
+                    className={`p-2 rounded-md transition-colors cursor-pointer ${
+                      note.pinned ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:bg-muted'
+                    }`}
+                    title={note.pinned ? 'Unpin' : 'Pin note'}
+                  >
+                    <Pin size={16} />
+                  </button>
+                )}
                 <button
                   onClick={() => duplicateNote(note.id)}
                   className="p-2 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
@@ -369,6 +549,15 @@ export function Editor({
                 >
                   <Copy size={16} />
                 </button>
+                {canRestoreWorkspace && (
+                  <button
+                    onClick={() => restoreNote(note.id)}
+                    className="p-2 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
+                    title="Restore to workspace"
+                  >
+                    <ArchiveRestore size={16} />
+                  </button>
+                )}
                 {canArchive && (
                   <button
                     onClick={() => archiveNote(note.id)}
@@ -378,24 +567,15 @@ export function Editor({
                     <Archive size={16} />
                   </button>
                 )}
-                <button
-                  onClick={() => toggleNoteEditorMode(note.id)}
-                  className={`px-2.5 py-1.5 rounded-md text-xs font-mono font-medium transition-colors cursor-pointer ${
-                    isMarkdown ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted'
-                  }`}
-                  title="Toggle markdown mode"
-                >
-                  MD
-                </button>
               </>
             )}
             <button
               onClick={() => {
-                deleteNote(note.id);
+                deleteNote(calendarBlockMode ? (activeNoteId ?? note.id) : note.id);
                 onClose?.();
               }}
               className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
-              title="Delete note"
+              title={calendarBlockMode ? 'Remove calendar block' : 'Delete note'}
             >
               <Trash2 size={16} />
             </button>
@@ -403,16 +583,54 @@ export function Editor({
         </div>
       )}
 
-      {isMarkdown && !compact && (
-        <div className={`flex items-center gap-2 ${padding} py-2 border-b border-border/30 text-xs text-muted-foreground`}>
-          <FileCode2 size={14} />
-          Markdown mode
-        </div>
+      {workspaceTaskMeta && workspaceTaskId && (
+        <WorkspaceTaskMetaBar
+          variant="header"
+          assigneeId={workspaceTaskMeta.assigneeId}
+          status={workspaceTaskMeta.status}
+          dueAt={workspaceTaskMeta.dueAt}
+          updatedAt={workspaceTaskMeta.updatedAt}
+          members={membersByCompany[workspaceTaskMeta.companyId] ?? []}
+          profilesByUserId={profilesByUserId}
+          currentUserId={currentUserId}
+          currentUserProfile={currentUserProfile}
+          onChange={(patch) => patchWorkspaceTask(workspaceTaskId, patch)}
+        />
+      )}
+
+      {note?.isTask &&
+        !workspaceTaskMeta &&
+        !isWorkspaceTaskSelectionId(note.id) &&
+        currentUserId && (
+        <WorkspaceTaskMetaBar
+          variant="header"
+          assigneeId={currentUserId}
+          status={note.personalTaskMeta?.status ?? 'todo'}
+          dueAt={note.personalTaskMeta?.dueAt}
+          updatedAt={note.updatedAt}
+          members={[]}
+          profilesByUserId={profilesByUserId}
+          currentUserId={currentUserId}
+          currentUserProfile={currentUserProfile}
+          assigneeLocked
+          onChange={(patch) => {
+            if (activeNoteId) patchPersonalTask(activeNoteId, patch);
+          }}
+        />
+      )}
+
+      {collaborationConflict && workspaceNoteId && (
+        <NoteCollaborationBanner
+          serverNote={collaborationConflict}
+          onLoadTheirs={() => resolveWorkspaceNoteLoadTheirs(workspaceNoteId)}
+          onKeepMine={() => resolveWorkspaceNoteKeepMine(workspaceNoteId)}
+          onDismiss={() => clearWorkspaceNoteConflict(workspaceNoteId)}
+        />
       )}
 
       <div
         ref={editorScrollRef}
-        className={`flex-1 overflow-y-auto mobile-editor-scroll ${padding} py-2 md:py-3 flex flex-col min-h-0 max-md:overflow-x-hidden`}
+        className={`flex-1 overflow-y-auto mobile-editor-scroll ${padding} pb-6 flex flex-col min-h-0 max-md:overflow-x-hidden`}
         onDragOver={(e) => {
           if (isMarkdown) e.preventDefault();
         }}
@@ -451,6 +669,8 @@ export function Editor({
             onPreviewImage={
               imageLightboxEnabled ? openNoteImagePreview : undefined
             }
+            workspaceTaskSuggestions={workspaceTaskSuggestions}
+            onOpenWorkspaceTask={openWorkspaceTask}
           />
         )}
         {!compact && note.attachments.length > 0 && (
@@ -490,8 +710,14 @@ export function Editor({
         )}
       </div>
 
-      {!compact && <TagInput noteId={note.id} tags={note.tags} />}
-      <TaskSchedulePanel note={note} compact={compact} />
+      <TaskSchedulePanel
+        note={note}
+        compact={compact}
+        onActiveNoteIdChange={(id) => {
+          if (!id) onClose?.();
+          else onActiveNoteIdChange?.(id);
+        }}
+      />
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileUpload} />
       {lightboxImage && (
         <ImageLightbox image={lightboxImage} onClose={closeLightbox} />

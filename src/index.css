@@ -51,25 +51,118 @@ body {
 }
 
 /* TipTap Editor Styles */
+.prose-editor.editor-prose-inset {
+  padding-left: 3rem;
+}
+
+@media (max-width: 767px) {
+  .prose-editor.editor-prose-inset {
+    padding-left: 2.5rem;
+  }
+}
+
+.editor-shell .drag-handle,
+.editor-shell .editor-drag-gutter {
+  z-index: 25;
+  left: -10px !important;
+}
+
+/* TipTap hides the gutter on every keydown; keep it visible while a block is hovered. */
+.editor-shell .editor-drag-gutter[data-gutter-active='true'] {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  opacity: 1;
+}
+
+.editor-shell .editor-drag-gutter .drag-handle {
+  opacity: 1;
+}
+
+.editor-shell .editor-block-gutter {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 1.75rem;
+  color: var(--color-muted-foreground);
+}
+
+.editor-shell .editor-gutter-btn,
+.editor-shell .editor-gutter-drag {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 4px;
+  color: color-mix(in srgb, var(--color-muted-foreground) 88%, transparent);
+  flex-shrink: 0;
+}
+
+.editor-shell .editor-gutter-btn:hover,
+.editor-shell .editor-gutter-drag:hover {
+  color: var(--color-foreground);
+  background: color-mix(in srgb, var(--color-muted) 80%, transparent);
+}
+
+.editor-shell .editor-gutter-btn {
+  cursor: pointer;
+}
+
+.editor-shell .editor-gutter-drag {
+  cursor: grab;
+}
+
+.editor-shell .editor-gutter-drag:active {
+  cursor: grabbing;
+}
+
+.mobile-editor-scroll {
+  padding-top: 60px;
+  padding-right: 70px;
+}
+
 .prose-editor {
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.7;
   color: var(--color-foreground);
+}
+
+.prose-editor-dropcursor,
+.prosemirror-dropcursor,
+.prosemirror-dropcursor-block {
+  pointer-events: none !important;
+  border: none !important;
+  height: 3px !important;
+  margin: 0 !important;
+  background-color: var(--color-primary) !important;
+  opacity: 0.9 !important;
+  border-radius: 1px;
+}
+
+.prose-editor h3 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0.65em 0 0.35em;
+  line-height: 1.35;
 }
 
 .prose-editor p {
   margin: 0.5em 0;
 }
 
+.prose-editor > :first-child {
+  margin-top: 0;
+}
+
 .prose-editor h1 {
-  font-size: 1.75em;
+  margin: .5em 0 .5em;
+  font-size: 40px;
   font-weight: 700;
-  margin: 1em 0 0.5em;
-  line-height: 1.3;
+  line-height: 1.25;
 }
 
 .prose-editor h2 {
-  font-size: 1.35em;
+  font-size: 24px;
   font-weight: 600;
   margin: 0.8em 0 0.4em;
   line-height: 1.3;
@@ -215,9 +308,11 @@ body {
 }
 
 .prose-editor pre {
+  position: relative;
   background: #1e1e2e;
   border-radius: 8px;
   padding: 1em 1.2em;
+  padding-top: 2.25em;
   margin: 0.8em 0;
   overflow-x: auto;
   font-family: var(--font-mono);
@@ -287,6 +382,33 @@ body {
   text-decoration: none;
 }
 
+.prose-editor .workspace-task-mention {
+  display: inline;
+  color: var(--color-primary);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  border-radius: 4px;
+  padding: 0 4px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.prose-editor span.note-comment {
+  background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--color-primary) 55%, transparent);
+  border-radius: 2px;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.prose-editor span.note-comment:hover {
+  background: color-mix(in srgb, var(--color-primary) 32%, transparent);
+}
+
+.prose-editor .workspace-task-mention:hover {
+  background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+
 .markdown-preview ul:not(:has(input[type="checkbox"])) {
   list-style-type: disc;
   list-style-position: outside;
@@ -347,6 +469,7 @@ body {
   --fc-button-active-bg-color: color-mix(in srgb, var(--color-primary) 75%, black);
   --fc-button-active-border-color: color-mix(in srgb, var(--color-primary) 75%, black);
   --fc-today-bg-color: color-mix(in srgb, var(--color-primary) 5%, transparent);
+  --fc-highlight-color: color-mix(in srgb, var(--color-primary) 22%, transparent);
   --fc-page-bg-color: var(--color-background);
   --fc-neutral-bg-color: var(--color-muted);
   --fc-list-event-hover-bg-color: var(--color-muted);
@@ -362,10 +485,22 @@ body {
   font-weight: 500;
 }
 
+.calendar-container .fc .fc-col-header-cell .fc-scrollgrid-sync-inner {
+  display: flex;
+  height: 100%;
+  align-items: stretch;
+}
+
 .calendar-container .fc .fc-col-header-cell-cushion {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-radius: 0;
 }
 
 .calendar-container .fc .fc-timegrid-slot-label-cushion {
@@ -424,6 +559,17 @@ body {
 
 .calendar-container .fc .fc-timegrid-col.fc-day-today {
   background: transparent;
+}
+
+.calendar-container .fc .fc-highlight {
+  background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+
+.calendar-container .fc .fc-event-mirror,
+.calendar-container .fc .fc-event.fc-event-mirror {
+  background: color-mix(in srgb, var(--color-primary) 32%, var(--color-background)) !important;
+  border-color: var(--color-primary) !important;
+  opacity: 0.92;
 }
 
 /* Scrollbar styling */
@@ -511,6 +657,37 @@ button:disabled {
 .prose-editor .editor-image.ProseMirror-selectednode {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
+}
+
+.prose-editor [data-resize-handle] {
+  background: var(--color-primary);
+  border: 2px solid var(--color-background);
+  border-radius: 9999px;
+  width: 10px;
+  height: 10px;
+}
+
+.prose-editor [data-resize-container] {
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+}
+
+.calendar-container .fc .fc-col-header-cell.fc-day-today {
+  background: transparent;
+}
+
+.calendar-container .fc .fc-col-header-cell.fc-day-today .fc-col-header-cell-cushion {
+  color: var(--color-primary);
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 4px 10px;
+  background: color-mix(in srgb, var(--color-primary) 22%, var(--color-background));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 28%, transparent);
+}
+
+.calendar-container .fc .fc-list-day.fc-day-today .fc-list-day-cushion {
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-muted));
 }
 
 /* Color palette: Ocean */
@@ -649,11 +826,15 @@ html {
   }
 
   .prose-editor h1 {
-    font-size: 1.45em;
+    font-size: 40px;
   }
 
   .prose-editor h2 {
-    font-size: 1.2em;
+    font-size: 24px;
+  }
+
+  .prose-editor h3 {
+    font-size: 20px;
   }
 
   button,
@@ -680,6 +861,8 @@ html {
     -webkit-overflow-scrolling: touch;
     overflow-anchor: none;
     scroll-padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+    padding-top: 40px;
+    padding-right: 48px;
   }
 
   .mobile-editor-scroll .ProseMirror {

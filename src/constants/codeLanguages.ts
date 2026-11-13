@@ -1,0 +1,30 @@
+export type CodeLanguageOption = { value: string; label: string };
+
+/** Popular languages first; value is the lowlight / highlight.js id. */
+export const CODE_LANGUAGE_OPTIONS: CodeLanguageOption[] = [
+  { value: '', label: 'Plain text' },
+  { value: 'javascript', label: 'JavaScript' },
+  { value: 'typescript', label: 'TypeScript' },
+  { value: 'html', label: 'HTML' },
+  { value: 'css', label: 'CSS' },
+  { value: 'json', label: 'JSON' },
+  { value: 'markdown', label: 'Markdown' },
+  { value: 'python', label: 'Python' },
+  { value: 'bash', label: 'Bash' },
+  { value: 'sql', label: 'SQL' },
+  { value: 'xml', label: 'XML' },
+  { value: 'yaml', label: 'YAML' },
+  { value: 'go', label: 'Go' },
+  { value: 'rust', label: 'Rust' },
+  { value: 'java', label: 'Java' },
+  { value: 'c', label: 'C' },
+  { value: 'cpp', label: 'C++' },
+  { value: 'csharp', label: 'C#' },
+  { value: 'php', label: 'PHP' },
+  { value: 'ruby', label: 'Ruby' },
+  { value: 'swift', label: 'Swift' },
+  { value: 'kotlin', label: 'Kotlin' },
+  { value: 'graphql', label: 'GraphQL' },
+  { value: 'docker', label: 'Docker' },
+  { value: 'scss', label: 'SCSS' },
+];

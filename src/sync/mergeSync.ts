@@ -1,4 +1,4 @@
-import type { Note, NoteDeletion } from '../types';
+import type { Folder, FolderDeletion, Note, NoteDeletion } from '../types';
 import type { SyncPayload } from './types';
 
 const DELETION_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
@@ -25,7 +25,10 @@ function pickNewerNote(a: Note, b: Note): Note {
   return new Date(a.updatedAt).getTime() >= new Date(b.updatedAt).getTime() ? a : b;
 }
 
-function mergeNoteDeletions(primary: NoteDeletion[], secondary: NoteDeletion[]): NoteDeletion[] {
+function mergeDeletionTombstones<T extends { id: string; deletedAt: string }>(
+  primary: T[],
+  secondary: T[],
+): T[] {
   const map = new Map<string, string>();
   for (const entry of [...primary, ...secondary]) {
     if (!entry?.id || !entry.deletedAt) continue;
@@ -34,7 +37,15 @@ function mergeNoteDeletions(primary: NoteDeletion[], secondary: NoteDeletion[]):
       map.set(entry.id, entry.deletedAt);
     }
   }
-  return Array.from(map.entries()).map(([id, deletedAt]) => ({ id, deletedAt }));
+  return Array.from(map.entries()).map(([id, deletedAt]) => ({ id, deletedAt }) as T);
+}
+
+function mergeNoteDeletions(primary: NoteDeletion[], secondary: NoteDeletion[]): NoteDeletion[] {
+  return mergeDeletionTombstones(primary, secondary);
+}
+
+function mergeFolderDeletions(primary: FolderDeletion[], secondary: FolderDeletion[]): FolderDeletion[] {
+  return mergeDeletionTombstones(primary, secondary);
 }
 
 function pruneNoteDeletions(deletions: NoteDeletion[], notes: Note[]): NoteDeletion[] {
@@ -56,6 +67,21 @@ function applyNoteDeletions(notes: Note[], deletions: NoteDeletion[]): Note[] {
   });
 }
 
+function pruneFolderDeletions(deletions: FolderDeletion[], folders: Folder[]): FolderDeletion[] {
+  const folderIds = new Set(folders.map((f) => f.id));
+  const cutoff = Date.now() - DELETION_RETENTION_MS;
+  return deletions.filter((d) => {
+    if (folderIds.has(d.id)) return true;
+    return new Date(d.deletedAt).getTime() >= cutoff;
+  });
+}
+
+function applyFolderDeletions(folders: Folder[], deletions: FolderDeletion[]): Folder[] {
+  if (!deletions.length) return folders;
+  const delIds = new Set(deletions.map((d) => d.id));
+  return folders.filter((f) => !delIds.has(f.id));
+}
+
 /** Combine device + cloud data. Notes use newest updatedAt; deletions remove stale copies. */
 export function mergeSyncPayloads(primary: SyncPayload, secondary: SyncPayload): SyncPayload {
   const noteDeletions = pruneNoteDeletions(
@@ -68,12 +94,23 @@ export function mergeSyncPayloads(primary: SyncPayload, secondary: SyncPayload):
     noteDeletions,
   );
 
-  const prunedDeletions = pruneNoteDeletions(noteDeletions, mergedNotes);
+  const prunedNoteDeletions = pruneNoteDeletions(noteDeletions, mergedNotes);
+
+  const folderDeletions = pruneFolderDeletions(
+    mergeFolderDeletions(primary.folderDeletions ?? [], secondary.folderDeletions ?? []),
+    [],
+  );
+  const mergedFolders = applyFolderDeletions(
+    mergeById(primary.folders, secondary.folders),
+    folderDeletions,
+  );
+  const prunedFolderDeletions = pruneFolderDeletions(folderDeletions, mergedFolders);
 
   return {
-    folders: mergeById(primary.folders, secondary.folders),
+    folders: mergedFolders,
     notes: mergedNotes,
-    noteDeletions: prunedDeletions,
+    noteDeletions: prunedNoteDeletions,
+    folderDeletions: prunedFolderDeletions,
     folderLinks: mergeById(primary.folderLinks, secondary.folderLinks),
     folderSecrets: mergeById(primary.folderSecrets, secondary.folderSecrets),
     theme: primary.theme ?? secondary.theme,
@@ -87,6 +124,7 @@ export function emptySyncPayload(): SyncPayload {
     folders: [],
     notes: [],
     noteDeletions: [],
+    folderDeletions: [],
     folderLinks: [],
     folderSecrets: [],
     theme: 'light',

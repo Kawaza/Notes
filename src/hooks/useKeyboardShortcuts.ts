@@ -5,7 +5,6 @@ import { getNewNoteFolderId } from '../types';
 export function useKeyboardShortcuts() {
   const setSearchOpen = useStore((s) => s.setSearchOpen);
   const createNote = useStore((s) => s.createNote);
-  const toggleTheme = useStore((s) => s.toggleTheme);
   const selectedFolderId = useStore((s) => s.selectedFolderId);
 
   useEffect(() => {
@@ -18,13 +17,10 @@ export function useKeyboardShortcuts() {
       } else if (mod && e.key === 'n') {
         e.preventDefault();
         createNote(getNewNoteFolderId(selectedFolderId));
-      } else if (mod && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
-        e.preventDefault();
-        toggleTheme();
       }
     };
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [setSearchOpen, createNote, toggleTheme, selectedFolderId]);
+  }, [setSearchOpen, createNote, selectedFolderId]);
 }

@@ -1,0 +1,37 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const publicDir = path.join(__dirname, '..', 'public');
+
+const logoIcon = `<svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+	<defs>
+		<image  width="176" height="192" id="img1" href="data:image/png;base64,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"/>
+	</defs>
+	<style></style>
+	<use id="Background" href="#img1" x="40" y="40"/>
+</svg>`;
+
+const horizontalPath = path.join(__dirname, 'brand-logo-horizontal.svg');
+const logoHorizontal = fs.readFileSync(horizontalPath, 'utf8');
+
+fs.writeFileSync(path.join(publicDir, 'logo-icon.svg'), logoIcon);
+fs.writeFileSync(path.join(publicDir, 'logo-horizontal.svg'), logoHorizontal);
+
+// Browsers block nested data-URI PNGs inside SVG when loaded via <img src="*.svg">.
+// Rasterize to PNG for reliable rendering in the app UI and favicon.
+await sharp(Buffer.from(logoIcon), { density: 300 })
+  .resize(256, 256, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+  .png()
+  .toFile(path.join(publicDir, 'logo-icon.png'));
+
+await sharp(Buffer.from(logoHorizontal), { density: 300 })
+  .resize(660, 192, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+  .png()
+  .toFile(path.join(publicDir, 'logo-horizontal.png'));
+
+fs.copyFileSync(path.join(publicDir, 'logo-icon.png'), path.join(publicDir, 'favicon.png'));
+
+console.log('Installed brand assets to public/ (SVG + PNG)');

@@ -16,14 +16,47 @@ let tray;
 let brandPalette = 'default';
 let brandTheme = 'light';
 
+const AUTH_CALLBACK_PREFIX = 'notes://';
+
+function extractAuthCallbackUrl(argv) {
+  return argv.find((arg) => typeof arg === 'string' && arg.startsWith(AUTH_CALLBACK_PREFIX));
+}
+
+let pendingAuthCallbackUrl = null;
+
+function deliverAuthCallbackUrl(url) {
+  if (!url || !url.startsWith(AUTH_CALLBACK_PREFIX)) return;
+  showMainWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('auth-callback-url', url);
+  } else {
+    pendingAuthCallbackUrl = url;
+  }
+}
+
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    showMainWindow();
+  app.on('second-instance', (_event, argv) => {
+    const url = extractAuthCallbackUrl(argv);
+    if (url) deliverAuthCallbackUrl(url);
+    else showMainWindow();
   });
 }
+
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('notes', process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient('notes');
+}
+
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  deliverAuthCallbackUrl(url);
+});
 
 function getDataPath() {
   return path.join(app.getPath('userData'), 'notes-data.json');
@@ -116,6 +149,20 @@ function createWindow() {
     },
   });
 
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    if (input.type !== 'keyDown') return;
+    const toggleDevTools =
+      input.key === 'F12' ||
+      (input.control && input.shift && (input.key === 'I' || input.key === 'i'));
+    if (toggleDevTools) {
+      if (mainWindow.webContents.isDevToolsOpened()) {
+        mainWindow.webContents.closeDevTools();
+      } else {
+        mainWindow.webContents.openDevTools({ mode: 'bottom' });
+      }
+    }
+  });
+
   mainWindow.webContents.on('context-menu', (_event, params) => {
     const menu = new Menu();
 
@@ -161,6 +208,11 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     setupAutoUpdater(mainWindow);
+    if (pendingAuthCallbackUrl) {
+      const url = pendingAuthCallbackUrl;
+      pendingAuthCallbackUrl = null;
+      mainWindow.webContents.send('auth-callback-url', url);
+    }
   });
 
   if (isDev) {
@@ -328,6 +380,8 @@ ipcMain.handle('open-external', (_event, url) => {
 
 if (gotTheLock) {
   app.whenReady().then(() => {
+    const bootUrl = extractAuthCallbackUrl(process.argv);
+    if (bootUrl) pendingAuthCallbackUrl = bootUrl;
     createWindow();
     createTray();
   });

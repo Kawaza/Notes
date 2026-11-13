@@ -3,9 +3,7 @@ import {
   FolderOpen,
   Plus,
   Calendar,
-  FileText,
-  Moon,
-  Sun,
+  CalendarClock,
   Star,
   Search,
   Settings,
@@ -18,6 +16,7 @@ import {
   ChevronDown,
   ChevronRight,
   MoreVertical,
+  Building2,
 } from 'lucide-react';
 import { useDroppable } from '@dnd-kit/core';
 import {
@@ -28,12 +27,29 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useStore } from '../store/useStore';
 import { NotesLogo } from './NotesLogo';
-import { ALL_NOTES_ID, DEFAULT_FOLDERS_SECTION_NAME, getNewNoteFolderId, isFolderArchived, sortableFolderId, FOLDER_ROOT_DROP_ID, ARCHIVE_DROP_ID, parentDropId, parentBodyDropId } from '../types';
+import { SidebarAccountChip } from './SidebarAccountChip';
+import {
+  MY_TASKS_ID,
+  DEFAULT_FOLDERS_SECTION_NAME,
+  isFolderArchived,
+  sortableFolderId,
+  FOLDER_ROOT_DROP_ID,
+  ARCHIVE_DROP_ID,
+  parentDropId,
+  parentBodyDropId,
+} from '../types';
 import { ContextMenu } from './ContextMenu';
 import { ConfirmDialog } from './ConfirmDialog';
 import { QuickLinkDialog } from './QuickLinkDialog';
 import { OverflowMenu } from './OverflowMenu';
 import { AddFolderMenu } from './AddFolderMenu';
+import { useCompanyStore } from '../store/companyStore';
+import { workspaceFolderArchiveSelectionId } from '../types/company';
+import { WorkspaceCompanySidebar } from './WorkspaceCompanySidebar';
+import { CreateCompanyDialog } from './company/CreateCompanyDialog';
+import { JoinCompanyDialog } from './company/JoinCompanyDialog';
+import { CompanyInviteDialog } from './company/CompanyInviteDialog';
+import { isSupabaseConfigured } from '../sync/supabaseClient';
 import { useIsMobile } from '../hooks/useIsMobile';
 import type { Folder } from '../types';
 import { parentOpenStorageKey } from '../utils/folderDragCollision';
@@ -301,6 +317,8 @@ function ParentFolderSection({
 }) {
   const [open, setOpen] = useState(() => readSectionOpen(parentOpenKey(parent.id)));
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const overflowRef = useRef<HTMLButtonElement>(null);
   const [confirmAction, setConfirmAction] = useState<'delete' | null>(null);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(parent.name);
@@ -435,6 +453,18 @@ function ParentFolderSection({
             >
               <Plus size={14} />
             </button>
+            <button
+              ref={overflowRef}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOverflowOpen((v) => !v);
+              }}
+              className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0 opacity-70 hover:opacity-100"
+              aria-label={`${parent.name} options`}
+            >
+              <MoreVertical size={14} />
+            </button>
           </div>
         </FolderDropZone>
 
@@ -486,6 +516,13 @@ function ParentFolderSection({
           items={parentMenuItems}
         />
       )}
+      {overflowOpen && (
+        <OverflowMenu
+          anchorRef={overflowRef}
+          items={parentMenuItems}
+          onClose={() => setOverflowOpen(false)}
+        />
+      )}
 
       <ConfirmDialog
         open={confirmAction === 'delete'}
@@ -496,6 +533,134 @@ function ParentFolderSection({
         onConfirm={() => deleteFolder(parent.id)}
         onClose={() => setConfirmAction(null)}
       />
+    </>
+  );
+}
+
+function ArchiveSidebarRow({
+  label,
+  icon,
+  count,
+  isSelected,
+  depth,
+  onClick,
+  onContextMenu,
+  trailing,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  count?: number;
+  isSelected: boolean;
+  depth: number;
+  onClick: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+  trailing?: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`group flex items-center gap-1 rounded-lg py-1.5 pr-2 text-sm transition-all duration-150 cursor-pointer ${
+        isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-muted text-foreground/80'
+      }`}
+      style={{ paddingLeft: `${8 + depth * 14}px` }}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+    >
+      <span className="w-4 shrink-0" aria-hidden />
+      {icon}
+      <span className="flex-1 truncate">{label}</span>
+      {count !== undefined && <span className="text-xs opacity-40 tabular-nums">{count}</span>}
+      {trailing}
+    </div>
+  );
+}
+
+function WorkspaceCompanyArchiveItem({
+  selectionId,
+  label,
+  folderId,
+  folderArchived,
+  isSelected,
+  depth,
+}: {
+  selectionId: string;
+  label: string;
+  folderId: string;
+  folderArchived: boolean;
+  isSelected: boolean;
+  depth: number;
+}) {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const overflowRef = useRef<HTMLButtonElement>(null);
+  const isMobile = useIsMobile();
+  const selectFolder = useStore((s) => s.selectFolder);
+  const restoreWorkspaceFolder = useCompanyStore((s) => s.restoreWorkspaceFolder);
+  const notesByFolder = useCompanyStore((s) => s.notesByFolder);
+  const tasksByFolder = useCompanyStore((s) => s.tasksByFolder);
+  const itemCount = useMemo(() => {
+    if (folderArchived) {
+      return (
+        (notesByFolder[folderId] ?? []).length + (tasksByFolder[folderId] ?? []).length
+      );
+    }
+    return (
+      (notesByFolder[folderId] ?? []).filter((n) => n.archived).length +
+      (tasksByFolder[folderId] ?? []).filter((t) => t.archived).length
+    );
+  }, [folderArchived, folderId, notesByFolder, tasksByFolder]);
+
+  const menuItems = folderArchived
+    ? [
+        {
+          label: 'Restore to workspace',
+          icon: <ArchiveRestore size={14} />,
+          onClick: () => void restoreWorkspaceFolder(folderId),
+        },
+      ]
+    : [];
+
+  return (
+    <>
+      <ArchiveSidebarRow
+        label={label}
+        icon={<Building2 size={15} className="shrink-0 opacity-50" />}
+        count={itemCount}
+        isSelected={isSelected}
+        depth={depth}
+        onClick={() => selectFolder(selectionId)}
+        onContextMenu={(e) => {
+          if (menuItems.length === 0) return;
+          e.preventDefault();
+          setContextMenu({ x: e.clientX, y: e.clientY });
+        }}
+        trailing={
+          isMobile && menuItems.length > 0 ? (
+            <button
+              ref={overflowRef}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOverflowOpen((v) => !v);
+              }}
+              className="p-1 rounded-md text-muted-foreground hover:bg-muted/80 cursor-pointer shrink-0"
+              aria-label="Archive options"
+            >
+              <MoreVertical size={14} />
+            </button>
+          ) : undefined
+        }
+      />
+      {contextMenu && menuItems.length > 0 && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={menuItems}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+      {overflowOpen && menuItems.length > 0 && (
+        <OverflowMenu anchorRef={overflowRef} items={menuItems} onClose={() => setOverflowOpen(false)} />
+      )}
     </>
   );
 }
@@ -532,35 +697,34 @@ function ArchiveFolderItem({ id, name, isSelected }: { id: string; name: string;
 
   return (
     <>
-      <div
-        className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm transition-all duration-150 cursor-pointer ${
-          isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-muted text-foreground/80'
-        }`}
+      <ArchiveSidebarRow
+        label={name}
+        icon={<Archive size={15} className="shrink-0 opacity-50" />}
+        count={noteCount}
+        isSelected={isSelected}
+        depth={0}
         onClick={() => selectFolder(id)}
         onContextMenu={(e) => {
           e.preventDefault();
           setContextMenu({ x: e.clientX, y: e.clientY });
         }}
-      >
-        <span className="w-4 shrink-0" aria-hidden />
-        <Archive size={15} className="shrink-0 opacity-50" />
-        <span className="flex-1 truncate">{name}</span>
-        <span className="text-xs opacity-40 tabular-nums">{noteCount}</span>
-        {isMobile && (
-          <button
-            ref={overflowRef}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setOverflowOpen((v) => !v);
-            }}
-            className="p-1 rounded-md text-muted-foreground hover:bg-muted/80 cursor-pointer shrink-0"
-            aria-label="Folder options"
-          >
-            <MoreVertical size={14} />
-          </button>
-        )}
-      </div>
+        trailing={
+          isMobile ? (
+            <button
+              ref={overflowRef}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOverflowOpen((v) => !v);
+              }}
+              className="p-1 rounded-md text-muted-foreground hover:bg-muted/80 cursor-pointer shrink-0"
+              aria-label="Folder options"
+            >
+              <MoreVertical size={14} />
+            </button>
+          ) : undefined
+        }
+      />
 
       {overflowOpen && (
         <OverflowMenu
@@ -652,23 +816,34 @@ export function Sidebar({ forceDrawer = false }: { forceDrawer?: boolean } = {})
   const [newFolderName, setNewFolderName] = useState('');
   const [newFolderTarget, setNewFolderTarget] = useState<NewFolderTarget | null>(null);
   const [showAddFolderMenu, setShowAddFolderMenu] = useState(false);
+  const [createCompanyOpen, setCreateCompanyOpen] = useState(false);
+  const [joinCompanyOpen, setJoinCompanyOpen] = useState(false);
+  const [inviteInfo, setInviteInfo] = useState<{ name: string; code: string } | null>(null);
   const addFolderButtonRef = useRef<HTMLButtonElement>(null);
+  const companies = useCompanyStore((s) => s.companies);
+  const refreshCompanies = useCompanyStore((s) => s.refreshCompanies);
+  const createCompanyWorkspace = useCompanyStore((s) => s.createCompanyWorkspace);
+  const joinWithInviteCode = useCompanyStore((s) => s.joinWithInviteCode);
   const [linkDialog, setLinkDialog] = useState<{ folderId: string; folderName: string } | null>(null);
   const [foldersOpen, setFoldersOpen] = useState(() => readSectionOpen(FOLDERS_OPEN_KEY));
   const [archiveOpen, setArchiveOpen] = useState(() => readSectionOpen(ARCHIVE_OPEN_KEY));
   const [foldersSectionEditing, setFoldersSectionEditing] = useState(false);
   const [foldersSectionEditName, setFoldersSectionEditName] = useState(DEFAULT_FOLDERS_SECTION_NAME);
   const [foldersSectionMenu, setFoldersSectionMenu] = useState<{ x: number; y: number } | null>(null);
+  const sidebarShowPersonalFolders = useStore((s) => s.sidebarShowPersonalFolders ?? true);
+  const sidebarShowArchive = useStore((s) => s.sidebarShowArchive ?? true);
+  const sidebarShowWorkspace = useStore((s) => s.sidebarShowWorkspace ?? true);
 
   const folders = useStore((s) => s.folders);
-  const theme = useStore((s) => s.theme);
   const viewMode = useStore((s) => s.viewMode);
   const selectedFolderId = useStore((s) => s.selectedFolderId);
-  const toggleTheme = useStore((s) => s.toggleTheme);
   const setViewMode = useStore((s) => s.setViewMode);
-  const selectAllNotes = useStore((s) => s.selectAllNotes);
+  const selectMyTasks = useStore((s) => s.selectMyTasks);
+  const myAssignedTasks = useCompanyStore((s) => s.myAssignedTasks);
+  const notesByFolder = useCompanyStore((s) => s.notesByFolder);
+  const tasksByFolder = useCompanyStore((s) => s.tasksByFolder);
+  const foldersByCompany = useCompanyStore((s) => s.foldersByCompany);
   const createFolder = useStore((s) => s.createFolder);
-  const createNote = useStore((s) => s.createNote);
   const createFolderLink = useStore((s) => s.createFolderLink);
   const setSearchOpen = useStore((s) => s.setSearchOpen);
   const mobileNavOpen = useStore((s) => s.mobileNavOpen);
@@ -679,14 +854,14 @@ export function Sidebar({ forceDrawer = false }: { forceDrawer?: boolean } = {})
   const isMobile = useIsMobile();
   const useDrawer = isMobile || forceDrawer;
 
-  const activeNoteCount = useMemo(
-    () =>
-      notes.filter((n) => {
-        const folder = folders.find((f) => f.id === n.folderId);
-        return !isFolderArchived(folder);
-      }).length,
-    [notes, folders],
-  );
+  const myTaskCount = useMemo(() => {
+    const personal = notes.filter((n) => {
+      if (!n.isTask) return false;
+      const folder = folders.find((f) => f.id === n.folderId);
+      return !isFolderArchived(folder);
+    }).length;
+    return personal + myAssignedTasks.length;
+  }, [notes, folders, myAssignedTasks]);
 
   const pinnedNotes = useMemo(
     () =>
@@ -700,7 +875,7 @@ export function Sidebar({ forceDrawer = false }: { forceDrawer?: boolean } = {})
     [notes, folders],
   );
 
-  const isAllNotesSelected = viewMode === 'notes' && selectedFolderId === ALL_NOTES_ID;
+  const isMyTasksSelected = viewMode === 'notes' && selectedFolderId === MY_TASKS_ID;
 
   const sectionFolders = useMemo(
     () =>
@@ -728,9 +903,51 @@ export function Sidebar({ forceDrawer = false }: { forceDrawer?: boolean } = {})
     [folders],
   );
 
+  const companyArchiveEntries = useMemo(() => {
+    const entries: {
+      selectionId: string;
+      label: string;
+      parentName: string;
+      folderId: string;
+      folderArchived: boolean;
+    }[] = [];
+    for (const company of companies) {
+      const list = foldersByCompany[company.id] ?? [];
+      for (const folder of list) {
+        if (folder.isParent) continue;
+        if (folder.archived) {
+          entries.push({
+            selectionId: workspaceFolderArchiveSelectionId(folder.id),
+            label: `${company.name} - ${folder.name}`,
+            parentName: folder.name,
+            folderId: folder.id,
+            folderArchived: true,
+          });
+          continue;
+        }
+        const count =
+          (notesByFolder[folder.id] ?? []).filter((n) => n.archived).length +
+          (tasksByFolder[folder.id] ?? []).filter((t) => t.archived).length;
+        if (count > 0) {
+          entries.push({
+            selectionId: workspaceFolderArchiveSelectionId(folder.id),
+            label: `${company.name} - ${folder.name}`,
+            parentName: folder.name,
+            folderId: folder.id,
+            folderArchived: false,
+          });
+        }
+      }
+    }
+    return entries.sort((a, b) => a.label.localeCompare(b.label));
+  }, [companies, foldersByCompany, notesByFolder, tasksByFolder]);
+
   const archivedFolderIds = useMemo(
-    () => archivedFolders.map((f) => f.id),
-    [archivedFolders],
+    () => [
+      ...archivedFolders.map((f) => f.id),
+      ...companyArchiveEntries.map((e) => e.selectionId),
+    ],
+    [archivedFolders, companyArchiveEntries],
   );
 
   const sectionFolderIds = useMemo(
@@ -773,10 +990,6 @@ export function Sidebar({ forceDrawer = false }: { forceDrawer?: boolean } = {})
   const cancelNewFolder = () => {
     setNewFolderTarget(null);
     setNewFolderName('');
-  };
-
-  const handleNewNote = () => {
-    createNote(getNewNoteFolderId(selectedFolderId));
   };
 
   const toggleFoldersOpen = () => {
@@ -859,16 +1072,16 @@ export function Sidebar({ forceDrawer = false }: { forceDrawer?: boolean } = {})
         </button>
 
         <button
-          onClick={selectAllNotes}
+          onClick={selectMyTasks}
           className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors cursor-pointer ${
-            isAllNotesSelected
+            isMyTasksSelected
               ? 'bg-accent text-accent-foreground font-medium'
               : 'hover:bg-muted text-foreground/70'
           }`}
         >
-          <FileText size={16} />
-          All Notes
-          <span className="ml-auto text-xs opacity-40">{activeNoteCount}</span>
+          <CalendarClock size={16} />
+          My Tasks
+          <span className="ml-auto text-xs opacity-40">{myTaskCount}</span>
         </button>
 
         <button
@@ -883,6 +1096,12 @@ export function Sidebar({ forceDrawer = false }: { forceDrawer?: boolean } = {})
           Calendar
         </button>
 
+        {isSupabaseConfigured() && (
+          <>
+            {sidebarShowWorkspace && <WorkspaceCompanySidebar />}
+          </>
+        )}
+
         {pinnedNotes.length > 0 && (
           <>
             <div className="mt-5 pt-1 pb-1.5 px-2">
@@ -896,6 +1115,8 @@ export function Sidebar({ forceDrawer = false }: { forceDrawer?: boolean } = {})
           </>
         )}
 
+        {sidebarShowPersonalFolders && (
+        <>
         <FolderDropZone id={FOLDER_ROOT_DROP_ID}>
           <div
             className="mt-5 pt-1 pb-1.5 px-2 flex items-center gap-1"
@@ -1055,7 +1276,10 @@ export function Sidebar({ forceDrawer = false }: { forceDrawer?: boolean } = {})
               />
             );
           })}
+        </>
+        )}
 
+        {sidebarShowArchive && (
         <FolderDropZone id={ARCHIVE_DROP_ID}>
           <button
             type="button"
@@ -1072,47 +1296,97 @@ export function Sidebar({ forceDrawer = false }: { forceDrawer?: boolean } = {})
               Archive
             </span>
             <span className="text-[11px] text-muted-foreground/60 tabular-nums">
-              {archivedFolders.length}
+              {archivedFolders.length + companyArchiveEntries.length}
             </span>
           </button>
           {archiveOpen &&
             archivedFolders.map((folder) => (
-              <ArchiveFolderItem
-                key={folder.id}
-                id={folder.id}
-                name={folder.name}
-                isSelected={viewMode === 'notes' && selectedFolderId === folder.id}
-              />
+              <div key={folder.id}>
+                <ArchiveFolderItem
+                  id={folder.id}
+                  name={folder.name}
+                  isSelected={viewMode === 'notes' && selectedFolderId === folder.id}
+                />
+                {companyArchiveEntries
+                  .filter((e) => e.parentName.toLowerCase() === folder.name.toLowerCase())
+                  .map((entry) => (
+                    <WorkspaceCompanyArchiveItem
+                      key={entry.selectionId}
+                      selectionId={entry.selectionId}
+                      label={entry.label}
+                      folderId={entry.folderId}
+                      folderArchived={entry.folderArchived}
+                      isSelected={viewMode === 'notes' && selectedFolderId === entry.selectionId}
+                      depth={1}
+                    />
+                  ))}
+              </div>
             ))}
-          {archiveOpen && archivedFolders.length === 0 && (
+          {archiveOpen &&
+            companyArchiveEntries
+              .filter(
+                (e) =>
+                  !archivedFolders.some((f) => f.name.toLowerCase() === e.parentName.toLowerCase()),
+              )
+              .map((entry) => (
+                <WorkspaceCompanyArchiveItem
+                  key={entry.selectionId}
+                  selectionId={entry.selectionId}
+                  label={entry.label}
+                  folderId={entry.folderId}
+                  folderArchived={entry.folderArchived}
+                  isSelected={viewMode === 'notes' && selectedFolderId === entry.selectionId}
+                  depth={0}
+                />
+              ))}
+          {archiveOpen && archivedFolders.length === 0 && companyArchiveEntries.length === 0 && (
             <p className="px-3 py-1.5 text-xs text-muted-foreground">Drop folders here to archive</p>
           )}
         </FolderDropZone>
+        )}
       </nav>
 
-      <div className="border-t border-border p-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] space-y-1.5">
+      <div className="border-t border-border p-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] space-y-1">
         <button
-          onClick={handleNewNote}
-          className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer"
-        >
-          <Plus size={16} />
-          New Note
-        </button>
-        <button
-          onClick={() => setSettingsOpen(true)}
-          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm hover:bg-muted text-foreground/70 transition-colors cursor-pointer"
+          type="button"
+          onClick={() => setSettingsOpen(true, 'appearance')}
+          className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-sm transition-colors cursor-pointer ${
+            viewMode === 'settings'
+              ? 'bg-primary/10 text-primary font-medium'
+              : 'hover:bg-muted text-foreground/70'
+          }`}
         >
           <Settings size={16} />
           Settings
         </button>
-        <button
-          onClick={toggleTheme}
-          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm hover:bg-muted text-foreground/70 transition-colors cursor-pointer"
-        >
-          {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
-          {theme === 'light' ? 'Dark mode' : 'Light mode'}
-        </button>
+        <SidebarAccountChip />
       </div>
+
+      {createCompanyOpen && (
+        <CreateCompanyDialog
+          onClose={() => setCreateCompanyOpen(false)}
+          onCreate={async (name) => {
+            const company = await createCompanyWorkspace(name);
+            setInviteInfo({ name: company.name, code: company.inviteCode });
+          }}
+        />
+      )}
+      {joinCompanyOpen && (
+        <JoinCompanyDialog
+          onClose={() => setJoinCompanyOpen(false)}
+          onJoin={joinWithInviteCode}
+        />
+      )}
+      {inviteInfo && (
+        <CompanyInviteDialog
+          companyName={inviteInfo.name}
+          inviteCode={inviteInfo.code}
+          onClose={() => {
+            setInviteInfo(null);
+            void refreshCompanies();
+          }}
+        />
+      )}
     </aside>
   );
 }

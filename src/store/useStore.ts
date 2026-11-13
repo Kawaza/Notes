@@ -1,10 +1,18 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import type { AppData, Folder, FolderLink, FolderSecret, Note, NoteAttachment, Theme, ViewMode, ColorPalette } from '../types';
-import { ALL_NOTES_ID, DEFAULT_FOLDER_ID, DEFAULT_FOLDERS_SECTION_NAME, isFolderArchived, notesInFolder } from '../types';
+import type { AppData, Folder, FolderLink, FolderSecret, Note, NoteAttachment, Theme, ViewMode, ColorPalette, SettingsTab } from '../types';
+import {
+  ALL_NOTES_ID,
+  DEFAULT_FOLDER_ID,
+  DEFAULT_FOLDERS_SECTION_NAME,
+  MY_TASKS_ID,
+  isFolderArchived,
+  notesInFolder,
+} from '../types';
 import { htmlToMarkdown, markdownToHtml } from '../utils/markdown';
 import { dndLog } from '../utils/dndDebug';
 import { isSyncAvailable, pullCloudData, pushCloudData, subscribeCloudChanges } from '../sync/cloudSync';
+import { isDesktopCloudOnly } from '../sync/supabaseClient';
 import { formatSyncError, withSyncTimeout } from '../sync/syncUtils';
 import {
   compactNoteForStorage,
@@ -14,36 +22,64 @@ import {
 import { compressImageFile } from '../utils/compressImage';
 import { optimizeNotesForSync } from '../utils/optimizeNotesForSync';
 import { analyzeSyncPayloadSize, MAX_SYNC_BYTES } from '../sync/syncUtils';
+import {
+  ImageStorageQuotaError,
+  MAX_SINGLE_IMAGE_BYTES,
+  buildPrivateImageStorageUsage,
+  dataUrlByteSize,
+  imageBytesInNotes,
+  privateImageQuotaExceededMessage,
+  singleImageTooLargeMessage,
+} from '../utils/imageStorageQuota';
 import { emptySyncPayload, mergeSyncPayloads } from '../sync/mergeSync';
 import type { SyncPayload, SyncStatus } from '../sync/types';
 import { useAuthStore } from './authStore';
+import { useCompanyStore } from './companyStore';
+import {
+  isWorkspaceNoteSelectionId,
+  isWorkspaceTaskSelectionId,
+  parseWorkspaceFolderSelectionId,
+  parseWorkspaceNoteSelectionId,
+  parseWorkspaceTaskSelectionId,
+  workspaceFolderSelectionId,
+  workspaceTaskSelectionId,
+} from '../types/company';
+import { workspaceNoteToNote } from '../utils/workspaceMappers';
 
 const defaultData: AppData = {
   folders: [],
   notes: [],
   noteDeletions: [],
+  folderDeletions: [],
   folderLinks: [],
   folderSecrets: [],
   theme: 'light',
   colorPalette: 'default',
-  selectedFolderId: ALL_NOTES_ID,
+  selectedFolderId: MY_TASKS_ID,
   selectedNoteId: null,
   viewMode: 'notes',
   selectedTag: null,
   foldersSectionName: DEFAULT_FOLDERS_SECTION_NAME,
   mobileLandscapeFocus: false,
+  sidebarShowPersonalFolders: true,
+  sidebarShowArchive: true,
+  sidebarShowWorkspace: true,
 };
 
 interface Store extends AppData {
   hydrated: boolean;
   searchOpen: boolean;
   settingsOpen: boolean;
+  settingsTab: SettingsTab;
   mobileNavOpen: boolean;
   folderDialogRequest: 'secret' | 'link' | null;
   requestFolderDialog: (type: 'secret' | 'link') => void;
   clearFolderDialogRequest: () => void;
+  workspaceListTab: 'notes' | 'tasks';
+  setWorkspaceListTab: (tab: 'notes' | 'tasks') => void;
   syncStatus: SyncStatus;
   syncError: string | null;
+  needsVaultUnlock: boolean;
   hydrate: (userId?: string | null, generation?: number) => Promise<void>;
   rehydrate: (userId: string | null) => Promise<void>;
   startCloudSync: (userId: string) => void;
@@ -57,14 +93,26 @@ interface Store extends AppData {
   toggleTheme: () => void;
   setColorPalette: (palette: ColorPalette) => void;
   setViewMode: (mode: ViewMode) => void;
-  selectAllNotes: () => void;
+  selectMyTasks: () => void;
+  createWorkspaceTask: (assigneeId: string | null, title?: string) => string | null;
+  createPersonalTask: (title?: string) => string | null;
+  patchPersonalTask: (
+    noteId: string,
+    patch: { status?: import('../types/company').WorkspaceTaskStatus; dueAt?: string | null },
+  ) => void;
+  openWorkspaceTask: (taskId: string, folderId: string) => void;
+  openTaskFromMyTasks: (note: Note) => void;
   selectFolder: (id: string) => void;
   selectNote: (id: string | null) => void;
   setSearchOpen: (open: boolean) => void;
-  setSettingsOpen: (open: boolean) => void;
+  setSettingsOpen: (open: boolean, tab?: SettingsTab) => void;
+  setSettingsTab: (tab: SettingsTab) => void;
   setMobileNavOpen: (open: boolean) => void;
   closeMobileNav: () => void;
   setMobileLandscapeFocus: (enabled: boolean) => void;
+  setSidebarShowPersonalFolders: (show: boolean) => void;
+  setSidebarShowArchive: (show: boolean) => void;
+  setSidebarShowWorkspace: (show: boolean) => void;
   createFolder: (
     name: string,
     options?: { parentId?: string | null; isParent?: boolean },
@@ -78,12 +126,19 @@ interface Store extends AppData {
     target: { parentId: string | null; insertBeforeId?: string },
   ) => void;
   deleteFolder: (id: string) => void;
-  createNote: (folderId?: string | null, title?: string, options?: { keepView?: boolean }) => string;
+  createNote: (
+    folderId?: string | null,
+    title?: string,
+    options?: { keepView?: boolean; calendarBlock?: boolean },
+  ) => string;
   createNoteFromImport: (partial: Partial<Note>, folderId?: string | null) => string;
   updateNote: (id: string, updates: Partial<Note>) => void;
+  /** Attach a calendar block to an existing task (block stays on the calendar; many blocks can share one task). */
+  linkCalendarBlockToTask: (blockId: string, taskId: string) => void;
   deleteNote: (id: string) => void;
   duplicateNote: (id: string) => string;
   archiveNote: (id: string) => void;
+  restoreNote: (id: string) => void;
   archiveFolder: (id: string) => void;
   restoreFolder: (id: string) => void;
   togglePinNote: (id: string) => void;
@@ -93,7 +148,8 @@ interface Store extends AppData {
   toggleNoteEditorMode: (id: string) => void;
   addTagToNote: (id: string, tag: string) => void;
   removeTagFromNote: (id: string, tag: string) => void;
-  addAttachment: (noteId: string, file: File) => Promise<NoteAttachment | null>;
+  getAccountImageUsage: () => import('../utils/imageStorageQuota').ImageStorageUsage;
+  addAttachment: (noteId: string, file: File) => Promise<NoteAttachment>;
   removeAttachment: (noteId: string, attachmentId: string) => void;
   createFolderLink: (folderId: string, title: string, url: string) => void;
   updateFolderLink: (id: string, updates: Partial<Pick<FolderLink, 'title' | 'url' | 'pinned'>>) => void;
@@ -124,6 +180,7 @@ function getPersistableData(state: Store): AppData {
     folders: state.folders,
     notes: state.notes.map(compactNoteForStorage),
     noteDeletions: state.noteDeletions ?? [],
+    folderDeletions: state.folderDeletions ?? [],
     folderLinks: state.folderLinks,
     folderSecrets: state.folderSecrets,
     theme: state.theme,
@@ -134,6 +191,9 @@ function getPersistableData(state: Store): AppData {
     selectedTag: state.selectedTag,
     foldersSectionName: state.foldersSectionName,
     mobileLandscapeFocus: state.mobileLandscapeFocus ?? false,
+    sidebarShowPersonalFolders: state.sidebarShowPersonalFolders ?? true,
+    sidebarShowArchive: state.sidebarShowArchive ?? true,
+    sidebarShowWorkspace: state.sidebarShowWorkspace ?? true,
   };
 }
 
@@ -193,6 +253,7 @@ function getSyncPayload(state: Store): SyncPayload {
     folders: state.folders,
     notes: compactNotesForSync(state.notes),
     noteDeletions: state.noteDeletions ?? [],
+    folderDeletions: state.folderDeletions ?? [],
     folderLinks: state.folderLinks,
     folderSecrets: state.folderSecrets,
     theme: state.theme,
@@ -211,6 +272,7 @@ function hasSyncContent(payload: SyncPayload): boolean {
 }
 
 async function loadLocalRaw(): Promise<AppData | null> {
+  if (isDesktopCloudOnly()) return null;
   if (window.electronAPI?.isElectron) {
     return window.electronAPI.loadData();
   }
@@ -239,6 +301,7 @@ async function loadDeviceRawForUpload(): Promise<AppData | null> {
 }
 
 async function saveLocalRaw(data: AppData): Promise<void> {
+  if (isDesktopCloudOnly()) return;
   if (window.electronAPI?.isElectron) {
     const ok = window.electronAPI.saveDataSync
       ? window.electronAPI.saveDataSync(data)
@@ -260,19 +323,26 @@ function migrateNote(
   note: Partial<Note> & Pick<Note, 'id' | 'title' | 'content' | 'createdAt' | 'updatedAt' | 'isTask' | 'order'>,
 ): Note {
   const scheduledAt = note.scheduledAt || undefined;
-  const isTask = note.isTask ?? Boolean(scheduledAt);
-  const migrated = {
+  const folderId = note.folderId ?? null;
+  let isCalendarBlock = note.isCalendarBlock;
+  if (isCalendarBlock === undefined && scheduledAt && folderId === null) {
+    isCalendarBlock = true;
+  }
+  isCalendarBlock = isCalendarBlock ?? false;
+  const isTask = isCalendarBlock ? false : (note.isTask ?? Boolean(scheduledAt));
+  return {
     contentType: note.contentType ?? 'html',
     tags: note.tags ?? [],
     pinned: note.pinned ?? false,
     attachments: note.attachments ?? [],
     calendarColor: note.calendarColor ?? 'blue',
+    linkedTaskId: note.linkedTaskId ?? null,
     ...note,
-    folderId: note.folderId ?? null,
+    folderId,
     scheduledAt,
+    isCalendarBlock,
     isTask,
   };
-  return migrated;
 }
 
 function normalizeNoteFolderId(folderId: string | null | undefined, folderIds: Set<string>): string | null {
@@ -329,6 +399,10 @@ function migrateData(data: Partial<AppData>): AppData {
       (d): d is { id: string; deletedAt: string } =>
         Boolean(d && typeof d.id === 'string' && typeof d.deletedAt === 'string'),
     ),
+    folderDeletions: (data.folderDeletions ?? []).filter(
+      (d): d is { id: string; deletedAt: string } =>
+        Boolean(d && typeof d.id === 'string' && typeof d.deletedAt === 'string'),
+    ),
     colorPalette: (() => {
       const raw = data.colorPalette as string | undefined;
       if (raw === 'mono') return 'default';
@@ -336,11 +410,14 @@ function migrateData(data: Partial<AppData>): AppData {
     })(),
     selectedTag: data.selectedTag ?? null,
     selectedFolderId:
-      !selectedFolderId || selectedFolderId === DEFAULT_FOLDER_ID
-        ? ALL_NOTES_ID
+      !selectedFolderId || selectedFolderId === DEFAULT_FOLDER_ID || selectedFolderId === ALL_NOTES_ID
+        ? MY_TASKS_ID
         : selectedFolderId,
     foldersSectionName: data.foldersSectionName?.trim() || DEFAULT_FOLDERS_SECTION_NAME,
     mobileLandscapeFocus: data.mobileLandscapeFocus ?? false,
+    sidebarShowPersonalFolders: data.sidebarShowPersonalFolders ?? true,
+    sidebarShowArchive: data.sidebarShowArchive ?? true,
+    sidebarShowWorkspace: data.sidebarShowWorkspace ?? true,
   };
 }
 
@@ -349,10 +426,13 @@ export const useStore = create<Store>((set, get) => ({
   hydrated: false,
   searchOpen: false,
   settingsOpen: false,
+  settingsTab: 'appearance',
   mobileNavOpen: false,
   folderDialogRequest: null,
+  workspaceListTab: 'notes',
   syncStatus: 'offline',
   syncError: null,
+  needsVaultUnlock: false,
 
   rehydrate: async (userId) => {
     const generation = ++hydrateGeneration;
@@ -441,6 +521,24 @@ export const useStore = create<Store>((set, get) => ({
   hydrate: async (userId = null, generation = hydrateGeneration) => {
     const isStale = () => !isHydrateGenerationCurrent(generation);
 
+    if (!userId && isDesktopCloudOnly()) {
+      const finishSignedOut = (partial: Partial<Store>) => {
+        if (isStale()) return;
+        set({ ...partial, hydrated: true, syncStatus: 'offline', syncError: null });
+      };
+      finishSignedOut({
+        ...migrateData(defaultData),
+        notes: [],
+        folders: [],
+        folderLinks: [],
+        folderSecrets: [],
+        noteDeletions: [],
+        folderDeletions: [],
+        selectedNoteId: null,
+      });
+      return;
+    }
+
     const finishHydrated = (partial: Partial<Store>) => {
       if (isStale()) return;
       set({ ...partial, hydrated: true });
@@ -487,7 +585,7 @@ export const useStore = create<Store>((set, get) => ({
               ...cloud.payload,
             };
           }
-          if (!isStale()) set({ syncStatus: 'synced', syncError: null });
+          if (!isStale()) set({ syncStatus: 'synced', syncError: null, needsVaultUnlock: false });
         } catch (err) {
           console.error('Cloud sync failed:', err);
           if (!isStale()) {
@@ -510,6 +608,7 @@ export const useStore = create<Store>((set, get) => ({
           folders: migrated.folders ?? [],
           notes,
           noteDeletions: migrated.noteDeletions ?? [],
+          folderDeletions: migrated.folderDeletions ?? [],
           folderLinks: migrated.folderLinks ?? [],
           folderSecrets: migrated.folderSecrets ?? [],
           theme: migrated.theme ?? 'light',
@@ -527,9 +626,10 @@ export const useStore = create<Store>((set, get) => ({
       }
 
       const hasExistingFile =
-        window.electronAPI?.hasDataFile != null
+        !isDesktopCloudOnly() &&
+        (window.electronAPI?.hasDataFile != null
           ? await window.electronAPI.hasDataFile()
-          : Boolean(localStorage.getItem('notes-app-data'));
+          : Boolean(localStorage.getItem('notes-app-data')));
 
       if (hasExistingFile) {
         console.error('Saved data exists but could not be loaded — not overwriting.');
@@ -587,9 +687,11 @@ export const useStore = create<Store>((set, get) => ({
       throw new Error('Sign in to sync first');
     }
 
-    const localRaw = await loadDeviceRawForUpload();
-    if (!localRaw) {
-      throw new Error('No notes found on this device');
+    const localRaw = isDesktopCloudOnly()
+      ? getPersistableData(get())
+      : await loadDeviceRawForUpload();
+    if (!localRaw || !hasSyncContent(getSyncPayload(migrateData(localRaw) as Store))) {
+      throw new Error('No notes found to upload');
     }
 
     const localPayload = getSyncPayload(migrateData(localRaw) as Store);
@@ -725,7 +827,7 @@ export const useStore = create<Store>((set, get) => ({
       saveTimeout = null;
     }
     if (!get().hydrated) return;
-    if (window.electronAPI?.saveDataSync) {
+    if (!isDesktopCloudOnly() && window.electronAPI?.saveDataSync) {
       const ok = window.electronAPI.saveDataSync(getPersistableData(get()));
       if (!ok) console.error('Failed to save notes to disk');
     }
@@ -750,13 +852,116 @@ export const useStore = create<Store>((set, get) => ({
 
   setViewMode: (viewMode) => set({ viewMode, mobileNavOpen: false }),
 
-  selectAllNotes: () => {
-    set({ selectedFolderId: ALL_NOTES_ID, selectedNoteId: null, viewMode: 'notes', mobileNavOpen: false });
+  selectMyTasks: () => {
+    set({
+      selectedFolderId: MY_TASKS_ID,
+      selectedNoteId: null,
+      viewMode: 'notes',
+      workspaceListTab: 'tasks',
+      mobileNavOpen: false,
+    });
+    void useCompanyStore.getState().loadMyAssignedTasks();
     scheduleSave(get);
   },
 
+  setWorkspaceListTab: (workspaceListTab) => set({ workspaceListTab }),
+
   selectFolder: (selectedFolderId) => {
-    set({ selectedFolderId, selectedNoteId: null, viewMode: 'notes', mobileNavOpen: false });
+    set({
+      selectedFolderId,
+      selectedNoteId: null,
+      viewMode: 'notes',
+      workspaceListTab: 'notes',
+      mobileNavOpen: false,
+    });
+    const ws = parseWorkspaceFolderSelectionId(selectedFolderId);
+    if (ws) void useCompanyStore.getState().loadFolderContent(ws.folderId);
+    scheduleSave(get);
+  },
+
+  createPersonalTask: (title = 'New task') => {
+    const targetFolderId = get().selectedFolderId;
+    if (!targetFolderId || parseWorkspaceFolderSelectionId(targetFolderId)) return null;
+    const folder = get().folders.find((f) => f.id === targetFolderId);
+    if (!folder || isFolderArchived(folder) || folder.isParent) return null;
+    const id = get().createNote(targetFolderId, title);
+    get().updateNote(id, {
+      isTask: true,
+      personalTaskMeta: { status: 'todo' },
+    });
+    set({
+      selectedNoteId: id,
+      workspaceListTab: 'tasks',
+      viewMode: 'notes',
+      mobileNavOpen: false,
+    });
+    return id;
+  },
+
+  patchPersonalTask: (noteId, patch) => {
+    const note = get().notes.find((n) => n.id === noteId);
+    if (!note) return;
+    const meta = note.personalTaskMeta ?? { status: 'todo' as const };
+    get().updateNote(noteId, {
+      personalTaskMeta: {
+        status: patch.status ?? meta.status,
+        dueAt: patch.dueAt === null ? undefined : patch.dueAt ?? meta.dueAt,
+      },
+    });
+  },
+
+  createWorkspaceTask: (assigneeId, title = 'New task') => {
+    const targetFolderId = get().selectedFolderId;
+    const ws = parseWorkspaceFolderSelectionId(targetFolderId);
+    if (!ws) return null;
+    const companyId = useCompanyStore.getState().getWorkspaceFolder(ws.folderId)?.companyId;
+    if (!companyId) return null;
+    const id = useCompanyStore.getState().createTaskInFolder(companyId, ws.folderId, {
+      title,
+      assigneeId,
+    });
+    set({
+      selectedNoteId: id,
+      selectedFolderId: workspaceFolderSelectionId(ws.folderId),
+      workspaceListTab: 'tasks',
+      viewMode: 'notes',
+      mobileNavOpen: false,
+    });
+    return id;
+  },
+
+  openWorkspaceTask: (taskId, folderId) => {
+    set({
+      selectedFolderId: workspaceFolderSelectionId(folderId),
+      selectedNoteId: workspaceTaskSelectionId(taskId),
+      workspaceListTab: 'tasks',
+      viewMode: 'notes',
+      mobileNavOpen: false,
+    });
+    void useCompanyStore.getState().loadFolderContent(folderId);
+    scheduleSave(get);
+  },
+
+  openTaskFromMyTasks: (note) => {
+    const rawTask = parseWorkspaceTaskSelectionId(note.id);
+    if (rawTask && note.workspaceTaskMeta) {
+      get().openWorkspaceTask(rawTask.taskId, note.workspaceTaskMeta.rawFolderId);
+      return;
+    }
+    if (note.folderId) {
+      set({
+        selectedFolderId: note.folderId,
+        selectedNoteId: note.id,
+        viewMode: 'notes',
+        workspaceListTab: note.isTask ? 'tasks' : 'notes',
+        mobileNavOpen: false,
+      });
+      const ws = parseWorkspaceFolderSelectionId(note.folderId);
+      if (ws) void useCompanyStore.getState().loadFolderContent(ws.folderId);
+      scheduleSave(get);
+      return;
+    }
+    set({ selectedNoteId: note.id, viewMode: 'notes', mobileNavOpen: false });
     scheduleSave(get);
   },
 
@@ -766,12 +971,32 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   setSearchOpen: (searchOpen) => set({ searchOpen }),
-  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setSettingsOpen: (open, tab) =>
+    set({
+      settingsOpen: open,
+      viewMode: open ? 'settings' : 'notes',
+      mobileNavOpen: false,
+      ...(open && tab ? { settingsTab: tab } : {}),
+    }),
+  setSettingsTab: (settingsTab) => set({ settingsTab, viewMode: 'settings', settingsOpen: true }),
   setMobileNavOpen: (mobileNavOpen) => set({ mobileNavOpen }),
   closeMobileNav: () => set({ mobileNavOpen: false }),
 
   setMobileLandscapeFocus: (mobileLandscapeFocus) => {
     set({ mobileLandscapeFocus });
+    scheduleSave(get);
+  },
+
+  setSidebarShowPersonalFolders: (sidebarShowPersonalFolders) => {
+    set({ sidebarShowPersonalFolders });
+    scheduleSave(get);
+  },
+  setSidebarShowArchive: (sidebarShowArchive) => {
+    set({ sidebarShowArchive });
+    scheduleSave(get);
+  },
+  setSidebarShowWorkspace: (sidebarShowWorkspace) => {
+    set({ sidebarShowWorkspace });
     scheduleSave(get);
   },
 
@@ -940,25 +1165,57 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   deleteFolder: (id) => {
-    set((s) => ({
-      folders: s.folders
-        .filter((f) => f.id !== id)
-        .map((f) => (f.parentId === id ? { ...f, parentId: null } : f)),
-      notes: s.notes.map((n) => (n.folderId === id ? { ...n, folderId: null } : n)),
-      folderLinks: s.folderLinks.filter((l) => l.folderId !== id),
-      folderSecrets: s.folderSecrets.filter((s) => s.folderId !== id),
-      selectedFolderId: s.selectedFolderId === id ? ALL_NOTES_ID : s.selectedFolderId,
-    }));
+    const deletedAt = new Date().toISOString();
+    set((s) => {
+      const folderDeletions = [...(s.folderDeletions ?? [])];
+      const existing = folderDeletions.findIndex((d) => d.id === id);
+      if (existing >= 0) folderDeletions[existing] = { id, deletedAt };
+      else folderDeletions.push({ id, deletedAt });
+
+      return {
+        folders: s.folders
+          .filter((f) => f.id !== id)
+          .map((f) => (f.parentId === id ? { ...f, parentId: null } : f)),
+        notes: s.notes.map((n) => (n.folderId === id ? { ...n, folderId: null } : n)),
+        folderLinks: s.folderLinks.filter((l) => l.folderId !== id),
+        folderSecrets: s.folderSecrets.filter((sec) => sec.folderId !== id),
+        folderDeletions,
+        selectedFolderId: s.selectedFolderId === id ? MY_TASKS_ID : s.selectedFolderId,
+      };
+    });
     scheduleSave(get);
   },
 
-  createNote: (folderId = null, title = 'Untitled', options) => {
+  createNote: (folderId, title = 'Untitled', options) => {
+    const targetFolderId = folderId === undefined ? get().selectedFolderId : folderId;
+    const ws =
+      options?.calendarBlock ? null : parseWorkspaceFolderSelectionId(targetFolderId);
+    if (ws) {
+      const id = useCompanyStore.getState().createWorkspaceNoteInFolder(ws.folderId, title);
+      set((s) => ({
+        selectedNoteId: options?.keepView ? s.selectedNoteId : id,
+        selectedFolderId: workspaceFolderSelectionId(ws.folderId),
+        viewMode: 'notes',
+        mobileNavOpen: false,
+      }));
+      return id;
+    }
+
     const id = uuidv4();
     const now = new Date().toISOString();
-    const scopedNotes = notesInFolder(get().notes, folderId);
+    const noteFolderId = folderId === undefined ? targetFolderId : folderId;
+    const scopedNotes = notesInFolder(
+      get().notes,
+      typeof noteFolderId === 'string' && !parseWorkspaceFolderSelectionId(noteFolderId)
+        ? noteFolderId
+        : null,
+    );
     const note: Note = migrateNote({
       id,
-      folderId,
+      folderId:
+        typeof noteFolderId === 'string' && parseWorkspaceFolderSelectionId(noteFolderId)
+          ? null
+          : noteFolderId,
       title,
       content: '',
       contentType: 'html',
@@ -970,7 +1227,8 @@ export const useStore = create<Store>((set, get) => ({
     set((s) => ({
       notes: [...s.notes, note],
       selectedNoteId: options?.keepView ? s.selectedNoteId : id,
-      selectedFolderId: folderId ?? (options?.keepView ? s.selectedFolderId : ALL_NOTES_ID),
+      selectedFolderId:
+        note.folderId ?? (options?.keepView ? s.selectedFolderId : MY_TASKS_ID),
       viewMode: options?.keepView ? s.viewMode : 'notes',
     }));
     scheduleSave(get);
@@ -998,6 +1256,16 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   updateNote: (id, updates) => {
+    if (isWorkspaceTaskSelectionId(id)) {
+      const raw = parseWorkspaceTaskSelectionId(id);
+      if (raw) useCompanyStore.getState().updateWorkspaceTask(raw.taskId, updates);
+      return;
+    }
+    if (isWorkspaceNoteSelectionId(id)) {
+      const raw = parseWorkspaceNoteSelectionId(id);
+      if (raw) useCompanyStore.getState().updateWorkspaceNote(raw.noteId, updates);
+      return;
+    }
     set((s) => ({
       notes: s.notes.map((n) =>
         n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n
@@ -1006,7 +1274,33 @@ export const useStore = create<Store>((set, get) => ({
     scheduleSave(get);
   },
 
+  linkCalendarBlockToTask: (blockId, taskId) => {
+    const block = get().notes.find((n) => n.id === blockId);
+    if (!block?.isCalendarBlock) return;
+    get().updateNote(blockId, { linkedTaskId: taskId });
+  },
+
   deleteNote: (id) => {
+    if (isWorkspaceTaskSelectionId(id)) {
+      const raw = parseWorkspaceTaskSelectionId(id);
+      if (raw) {
+        void useCompanyStore.getState().deleteWorkspaceTask(raw.taskId);
+        set((s) => ({
+          selectedNoteId: s.selectedNoteId === id ? null : s.selectedNoteId,
+        }));
+      }
+      return;
+    }
+    if (isWorkspaceNoteSelectionId(id)) {
+      const raw = parseWorkspaceNoteSelectionId(id);
+      if (raw) {
+        void useCompanyStore.getState().deleteWorkspaceNote(raw.noteId);
+        set((s) => ({
+          selectedNoteId: s.selectedNoteId === id ? null : s.selectedNoteId,
+        }));
+      }
+      return;
+    }
     const deletedAt = new Date().toISOString();
     set((s) => {
       const noteDeletions = [...(s.noteDeletions ?? [])];
@@ -1024,6 +1318,32 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   duplicateNote: (id) => {
+    if (isWorkspaceTaskSelectionId(id)) {
+      const raw = parseWorkspaceTaskSelectionId(id);
+      if (!raw) return '';
+      const newId = useCompanyStore.getState().duplicateWorkspaceTask(raw.taskId);
+      if (newId) set({ selectedNoteId: newId, viewMode: 'notes' });
+      return newId ?? '';
+    }
+    if (isWorkspaceNoteSelectionId(id)) {
+      const raw = parseWorkspaceNoteSelectionId(id);
+      if (!raw) return '';
+      let source: { title: string; folderId: string } | null = null;
+      for (const notes of Object.values(useCompanyStore.getState().notesByFolder)) {
+        const hit = notes.find((n) => n.id === raw.noteId);
+        if (hit) {
+          source = { title: hit.title, folderId: hit.folderId };
+          break;
+        }
+      }
+      if (!source) return '';
+      const newId = useCompanyStore.getState().createWorkspaceNoteInFolder(
+        source.folderId,
+        source.title.trim() ? `${source.title.trim()} (copy)` : 'Untitled (copy)',
+      );
+      set({ selectedNoteId: newId, viewMode: 'notes' });
+      return newId;
+    }
     const source = get().notes.find((n) => n.id === id);
     if (!source) return '';
 
@@ -1044,7 +1364,7 @@ export const useStore = create<Store>((set, get) => ({
     set((s) => ({
       notes: [...s.notes, copy],
       selectedNoteId: newId,
-      selectedFolderId: source.folderId ?? ALL_NOTES_ID,
+      selectedFolderId: source.folderId ?? MY_TASKS_ID,
       viewMode: 'notes',
     }));
     scheduleSave(get);
@@ -1052,6 +1372,16 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   archiveNote: (noteId) => {
+    if (isWorkspaceTaskSelectionId(noteId)) {
+      const raw = parseWorkspaceTaskSelectionId(noteId);
+      if (raw) void useCompanyStore.getState().patchWorkspaceTask(raw.taskId, { archived: true });
+      return;
+    }
+    if (isWorkspaceNoteSelectionId(noteId)) {
+      const raw = parseWorkspaceNoteSelectionId(noteId);
+      if (raw) void useCompanyStore.getState().archiveWorkspaceNote(raw.noteId);
+      return;
+    }
     const state = get();
     const note = state.notes.find((n) => n.id === noteId);
     if (!note) return;
@@ -1098,6 +1428,19 @@ export const useStore = create<Store>((set, get) => ({
       viewMode: 'notes',
     });
     scheduleSave(get);
+  },
+
+  restoreNote: (noteId) => {
+    if (isWorkspaceTaskSelectionId(noteId)) {
+      const raw = parseWorkspaceTaskSelectionId(noteId);
+      if (raw) void useCompanyStore.getState().patchWorkspaceTask(raw.taskId, { archived: false });
+      return;
+    }
+    if (isWorkspaceNoteSelectionId(noteId)) {
+      const raw = parseWorkspaceNoteSelectionId(noteId);
+      if (raw) void useCompanyStore.getState().restoreWorkspaceNote(raw.noteId);
+      return;
+    }
   },
 
   archiveFolder: (folderId) => {
@@ -1174,6 +1517,20 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   togglePinNote: (id) => {
+    if (isWorkspaceNoteSelectionId(id)) {
+      const raw = parseWorkspaceNoteSelectionId(id);
+      if (!raw) return;
+      let pinned = false;
+      for (const notes of Object.values(useCompanyStore.getState().notesByFolder)) {
+        const hit = notes.find((n) => n.id === raw.noteId);
+        if (hit) {
+          pinned = !hit.pinned;
+          break;
+        }
+      }
+      useCompanyStore.getState().updateWorkspaceNote(raw.noteId, { pinned });
+      return;
+    }
     set((s) => ({
       notes: s.notes.map((n) =>
         n.id === id ? { ...n, pinned: !n.pinned, updatedAt: new Date().toISOString() } : n
@@ -1183,6 +1540,15 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   togglePinFolderLink: (id) => {
+    const ws = parseWorkspaceFolderSelectionId(get().selectedFolderId);
+    if (ws) {
+      const links = useCompanyStore.getState().linksByFolder[ws.folderId] ?? [];
+      const link = links.find((l) => l.id === id);
+      if (link) {
+        void useCompanyStore.getState().updateWorkspaceLink(id, { pinned: !link.pinned });
+      }
+      return;
+    }
     set((s) => ({
       folderLinks: s.folderLinks.map((l) =>
         l.id === id ? { ...l, pinned: !(l.pinned ?? false) } : l
@@ -1220,7 +1586,7 @@ export const useStore = create<Store>((set, get) => ({
       notes: s.notes.map((n) => {
         if (n.id !== noteId) return n;
         const updates: Partial<typeof n> = { folderId, order: folderNotes.length };
-        if (n.scheduledAt && folderId) {
+        if (n.scheduledAt && folderId && !n.isCalendarBlock) {
           const folder = s.folders.find((f) => f.id === folderId);
           updates.calendarColor = folder?.calendarColor ?? 'blue';
         }
@@ -1243,6 +1609,36 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   toggleNoteEditorMode: (id) => {
+    if (isWorkspaceTaskSelectionId(id)) {
+      const raw = parseWorkspaceTaskSelectionId(id);
+      if (!raw) return;
+      for (const tasks of Object.values(useCompanyStore.getState().tasksByFolder)) {
+        const hit = tasks.find((t) => t.id === raw.taskId);
+        if (!hit) continue;
+        if (hit.contentType === 'html') {
+          get().updateNote(id, { content: htmlToMarkdown(hit.content), contentType: 'markdown' });
+        } else {
+          get().updateNote(id, { content: markdownToHtml(hit.content), contentType: 'html' });
+        }
+        return;
+      }
+      return;
+    }
+    if (isWorkspaceNoteSelectionId(id)) {
+      const raw = parseWorkspaceNoteSelectionId(id);
+      if (!raw) return;
+      for (const notes of Object.values(useCompanyStore.getState().notesByFolder)) {
+        const hit = notes.find((n) => n.id === raw.noteId);
+        if (!hit) continue;
+        if (hit.contentType === 'html') {
+          get().updateNote(id, { content: htmlToMarkdown(hit.content), contentType: 'markdown' });
+        } else {
+          get().updateNote(id, { content: markdownToHtml(hit.content), contentType: 'html' });
+        }
+        return;
+      }
+      return;
+    }
     const note = get().notes.find((n) => n.id === id);
     if (!note) return;
     if (note.contentType === 'html') {
@@ -1276,14 +1672,53 @@ export const useStore = create<Store>((set, get) => ({
     scheduleSave(get);
   },
 
+  getAccountImageUsage: () => {
+    const personal = imageBytesInNotes(get().notes);
+    return buildPrivateImageStorageUsage(personal);
+  },
+
   addAttachment: async (noteId, file) => {
+    const isImage = file.type.startsWith('image/');
+    if (isImage && file.size > MAX_SINGLE_IMAGE_BYTES) {
+      throw new ImageStorageQuotaError(singleImageTooLargeMessage(file.size));
+    }
+
     const { dataUrl, mimeType } = await compressImageFile(file);
+    const incomingBytes = dataUrlByteSize(dataUrl);
+    if (isImage && incomingBytes > MAX_SINGLE_IMAGE_BYTES) {
+      throw new ImageStorageQuotaError(singleImageTooLargeMessage(incomingBytes));
+    }
+
+    const isWorkspace = isWorkspaceNoteSelectionId(noteId);
+    if (!isWorkspace) {
+      const usage = get().getAccountImageUsage();
+      if (usage.usedBytes + incomingBytes > usage.limitBytes) {
+        throw new ImageStorageQuotaError(
+          privateImageQuotaExceededMessage(usage.usedBytes, incomingBytes),
+        );
+      }
+    }
     const attachment = {
       id: uuidv4(),
       name: file.name,
       dataUrl,
       mimeType,
     };
+    if (isWorkspaceNoteSelectionId(noteId)) {
+      const raw = parseWorkspaceNoteSelectionId(noteId);
+      if (raw) {
+        for (const list of Object.values(useCompanyStore.getState().notesByFolder)) {
+          const hit = list.find((n) => n.id === raw.noteId);
+          if (hit) {
+            useCompanyStore.getState().updateWorkspaceNote(raw.noteId, {
+              attachments: [...(hit.attachments ?? []), attachment],
+            });
+            break;
+          }
+        }
+      }
+      return attachment;
+    }
     set((s) => ({
       notes: s.notes.map((n) =>
         n.id === noteId
@@ -1296,6 +1731,21 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   removeAttachment: (noteId, attachmentId) => {
+    if (isWorkspaceNoteSelectionId(noteId)) {
+      const raw = parseWorkspaceNoteSelectionId(noteId);
+      if (raw) {
+        for (const list of Object.values(useCompanyStore.getState().notesByFolder)) {
+          const hit = list.find((n) => n.id === raw.noteId);
+          if (hit) {
+            useCompanyStore.getState().updateWorkspaceNote(raw.noteId, {
+              attachments: hit.attachments.filter((a) => a.id !== attachmentId),
+            });
+            break;
+          }
+        }
+      }
+      return;
+    }
     set((s) => ({
       notes: s.notes.map((n) =>
         n.id === noteId
@@ -1307,6 +1757,11 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   createFolderLink: (folderId, title, url) => {
+    const ws = parseWorkspaceFolderSelectionId(folderId);
+    if (ws) {
+      void useCompanyStore.getState().createWorkspaceLink(ws.folderId, title, url);
+      return;
+    }
     const trimmedUrl = url.trim();
     const normalizedUrl = /^(https?:\/\/|mailto:|tel:)/i.test(trimmedUrl)
       ? trimmedUrl
@@ -1325,6 +1780,10 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   updateFolderLink: (id, updates) => {
+    if (parseWorkspaceFolderSelectionId(get().selectedFolderId)) {
+      void useCompanyStore.getState().updateWorkspaceLink(id, updates);
+      return;
+    }
     set((s) => ({
       folderLinks: s.folderLinks.map((l) => {
         if (l.id !== id) return l;
@@ -1345,6 +1804,11 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   deleteFolderLink: (id) => {
+    const ws = parseWorkspaceFolderSelectionId(get().selectedFolderId);
+    if (ws) {
+      void useCompanyStore.getState().deleteWorkspaceLink(id, ws.folderId);
+      return;
+    }
     set((s) => ({
       folderLinks: s.folderLinks.filter((l) => l.id !== id),
       folderSecrets: s.folderSecrets.map((sec) =>
@@ -1355,6 +1819,11 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   createFolderSecret: (folderId, data) => {
+    const ws = parseWorkspaceFolderSelectionId(folderId);
+    if (ws) {
+      void useCompanyStore.getState().createWorkspaceSecret(ws.folderId, data);
+      return;
+    }
     const now = new Date().toISOString();
     const secret: FolderSecret = {
       id: uuidv4(),
@@ -1418,23 +1887,18 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   getDisplayedNotes: () => {
-    const { notes, selectedFolderId, folders } = get();
-    let filtered = notes;
-    if (selectedFolderId && selectedFolderId !== ALL_NOTES_ID) {
-      filtered = filtered.filter((n) => n.folderId === selectedFolderId);
-    } else if (selectedFolderId === ALL_NOTES_ID) {
-      filtered = filtered.filter((n) => {
-        if (!n.folderId) return true;
-        const folder = folders.find((f) => f.id === n.folderId);
-        return !isFolderArchived(folder);
-      });
+    const { notes, selectedFolderId } = get();
+    const ws = parseWorkspaceFolderSelectionId(selectedFolderId);
+    if (ws) {
+      const rows = useCompanyStore.getState().notesByFolder[ws.folderId] ?? [];
+      return rows
+        .map(workspaceNoteToNote)
+        .sort((a, b) => a.order - b.order);
     }
-    return filtered.sort((a, b) => {
-      if (selectedFolderId === ALL_NOTES_ID) {
-        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-      }
-      return a.order - b.order;
-    });
+    if (!selectedFolderId || selectedFolderId === MY_TASKS_ID) return [];
+    return notes
+      .filter((n) => n.folderId === selectedFolderId)
+      .sort((a, b) => a.order - b.order);
   },
 
   getNotesByFolder: (folderId) =>
@@ -1466,4 +1930,4 @@ export const useStore = create<Store>((set, get) => ({
   },
 }));
 
-export { ALL_NOTES_ID };
+export { ALL_NOTES_ID, MY_TASKS_ID };

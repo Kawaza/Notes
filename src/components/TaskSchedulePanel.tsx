@@ -1,9 +1,11 @@
-import { useState } from 'react';
 import { format } from 'date-fns';
-import { CalendarClock, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { Note } from '../types';
+import { isWorkspaceTaskSelectionId } from '../types/company';
 import { FolderSelect } from './FolderSelect';
+import { CalendarTaskLinkSelect } from './CalendarTaskLinkSelect';
+import { CalendarColorPicker } from './CalendarColorPicker';
 
 function formatScheduleDisplay(note: Note) {
   if (!note.scheduledAt) return '';
@@ -21,54 +23,46 @@ function formatScheduleDisplay(note: Note) {
 export function TaskSchedulePanel({
   note,
   compact,
+  onActiveNoteIdChange,
 }: {
   note: Note;
   compact?: boolean;
+  onActiveNoteIdChange?: (id: string) => void;
 }) {
   const updateNote = useStore((s) => s.updateNote);
   const moveNote = useStore((s) => s.moveNote);
-  const folders = useStore((s) => s.folders);
-  const [editing, setEditing] = useState(false);
-
-  const handleSchedule = (date: string, time: string, endTime?: string) => {
-    if (!date) return;
-    const scheduledAt = new Date(`${date}T${time || '09:00'}`).toISOString();
-    let scheduledEnd: string | undefined;
-    if (endTime) {
-      scheduledEnd = new Date(`${date}T${endTime}`).toISOString();
-    }
-    const folder = folders.find((f) => f.id === note.folderId);
-    updateNote(note.id, {
-      scheduledAt,
-      scheduledEnd,
-      isTask: true,
-      calendarColor: folder?.calendarColor ?? 'blue',
-    });
-  };
+  const linkCalendarBlockToTask = useStore((s) => s.linkCalendarBlockToTask);
+  const isCalendarBlock = Boolean(note.isCalendarBlock);
+  const isWorkspaceTask = isWorkspaceTaskSelectionId(note.id);
 
   const clearSchedule = () => {
+    if (isCalendarBlock) {
+      useStore.getState().deleteNote(note.id);
+      onActiveNoteIdChange?.('');
+      return;
+    }
     updateNote(note.id, {
       scheduledAt: undefined,
       scheduledEnd: undefined,
     });
-    setEditing(false);
   };
 
-  const dateValue = note.scheduledAt
-    ? format(new Date(note.scheduledAt), 'yyyy-MM-dd')
-    : format(new Date(), 'yyyy-MM-dd');
-  const timeValue = note.scheduledAt
-    ? format(new Date(note.scheduledAt), 'HH:mm')
-    : '09:00';
-  const endTimeValue = note.scheduledEnd
-    ? format(new Date(note.scheduledEnd), 'HH:mm')
-    : '10:00';
+  if (!note.scheduledAt) return null;
 
   const pad = compact ? 'px-4' : 'px-4 md:px-8';
-  const inputClass =
-    'px-2 py-1.5 md:px-1.5 md:py-1 text-base md:text-xs rounded-md bg-background border border-border outline-none focus:ring-1 focus:ring-primary/40 min-w-0';
 
-  const folderSelect = (
+  const folderSelect = isCalendarBlock ? (
+    <CalendarTaskLinkSelect
+      note={note}
+      size="sm"
+      onLinkTask={(taskId) => {
+        linkCalendarBlockToTask(note.id, taskId);
+      }}
+      onClearLink={() => updateNote(note.id, { linkedTaskId: null })}
+    />
+  ) : isWorkspaceTask ? (
+    <span className="text-xs text-muted-foreground truncate max-w-[120px]">Company task</span>
+  ) : (
     <FolderSelect
       value={note.folderId}
       onChange={(folderId) => moveNote(note.id, folderId)}
@@ -76,29 +70,22 @@ export function TaskSchedulePanel({
     />
   );
 
-  const closeEditing = () => {
-    setEditing(false);
-  };
-
-  if (!note.scheduledAt) return null;
-
-  return (
-    <div className={`border-t border-border ${pad} py-2 bg-muted/30 shrink-0`}>
-      {note.scheduledAt && !editing ? (
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <CalendarClock size={14} className="text-primary shrink-0" />
-            <button
-              onClick={() => setEditing(true)}
-              className="flex-1 text-left text-sm hover:text-primary transition-colors cursor-pointer min-w-0"
-              title="Click to change schedule"
-            >
-              {formatScheduleDisplay(note)}
-            </button>
+  if (isCalendarBlock) {
+    return (
+      <div className={`border-t border-border ${pad} py-2.5 bg-muted/30 shrink-0`}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="text-xs text-muted-foreground shrink-0">Block color</span>
+            <CalendarColorPicker
+              compact
+              value={note.calendarColor}
+              onChange={(calendarColor) => updateNote(note.id, { calendarColor })}
+            />
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {folderSelect}
             <button
+              type="button"
               onClick={clearSchedule}
               className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
               title="Remove from calendar"
@@ -107,40 +94,27 @@ export function TaskSchedulePanel({
             </button>
           </div>
         </div>
-      ) : editing ? (
-        <div className="flex flex-col gap-2">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <input
-              type="date"
-              value={dateValue}
-              onChange={(e) => handleSchedule(e.target.value, timeValue, endTimeValue)}
-              className={inputClass}
-            />
-            <input
-              type="time"
-              value={timeValue}
-              onChange={(e) => handleSchedule(dateValue, e.target.value, endTimeValue)}
-              className={inputClass}
-            />
-            <input
-              type="time"
-              value={endTimeValue}
-              onChange={(e) => handleSchedule(dateValue, timeValue, e.target.value)}
-              className={inputClass}
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            {folderSelect}
-            <button
-              onClick={closeEditing}
-              className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
-              title="Done"
-            >
-              <X size={15} />
-            </button>
-          </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`border-t border-border ${pad} py-2 bg-muted/30 shrink-0`}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <p className="flex-1 text-sm text-muted-foreground min-w-0">{formatScheduleDisplay(note)}</p>
+        <div className="flex items-center gap-2 shrink-0">
+          {folderSelect}
+          <button
+            type="button"
+            onClick={clearSchedule}
+            className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
+            title="Remove from calendar"
+          >
+            <X size={15} />
+          </button>
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }
+

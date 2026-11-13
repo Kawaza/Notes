@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { format, isPast, isToday, isTomorrow } from 'date-fns';
 import {
   ExternalLink,
@@ -30,6 +30,14 @@ import { OverflowMenu } from './OverflowMenu';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { openExternalUrl } from '../utils/openExternal';
 import type { FolderLink, FolderSecret, FolderSecretType, Note } from '../types';
+import { parseWorkspaceFolderSelectionId } from '../types/company';
+import { useCompanyStore } from '../store/companyStore';
+import {
+  workspaceFolderToFolder,
+  workspaceLinkToFolderLink,
+  workspaceNoteToNote,
+  workspaceSecretToFolderSecret,
+} from '../utils/workspaceMappers';
 
 function formatTaskDate(dateStr: string) {
   const date = new Date(dateStr);
@@ -366,6 +374,33 @@ interface FolderOverviewProps {
 }
 
 export function FolderOverview({ folderId, onMobileBack }: FolderOverviewProps) {
+  const wsParsed = parseWorkspaceFolderSelectionId(folderId);
+  const rawWorkspaceFolderId = wsParsed?.folderId ?? null;
+  const foldersByCompany = useCompanyStore((s) => s.foldersByCompany);
+  const wsFolder = useMemo(() => {
+    if (!rawWorkspaceFolderId) return null;
+    for (const list of Object.values(foldersByCompany)) {
+      const hit = list.find((f) => f.id === rawWorkspaceFolderId);
+      if (hit) return hit;
+    }
+    return null;
+  }, [foldersByCompany, rawWorkspaceFolderId]);
+  const notesByFolder = useCompanyStore((s) => s.notesByFolder);
+  const linksByFolder = useCompanyStore((s) => s.linksByFolder);
+  const secretsByFolder = useCompanyStore((s) => s.secretsByFolder);
+  const wsNotes = useMemo(
+    () => (rawWorkspaceFolderId ? notesByFolder[rawWorkspaceFolderId] ?? [] : []),
+    [notesByFolder, rawWorkspaceFolderId],
+  );
+  const wsLinks = useMemo(
+    () => (rawWorkspaceFolderId ? linksByFolder[rawWorkspaceFolderId] ?? [] : []),
+    [linksByFolder, rawWorkspaceFolderId],
+  );
+  const wsSecrets = useMemo(
+    () => (rawWorkspaceFolderId ? secretsByFolder[rawWorkspaceFolderId] ?? [] : []),
+    [secretsByFolder, rawWorkspaceFolderId],
+  );
+
   const folders = useStore((s) => s.folders);
   const notes = useStore((s) => s.notes);
   const folderLinks = useStore((s) => s.folderLinks);
@@ -396,21 +431,38 @@ export function FolderOverview({ folderId, onMobileBack }: FolderOverviewProps) 
     setEditingSecret(null);
   };
 
-  const folder = folders.find((f) => f.id === folderId);
-
-  const links = useMemo(
-    () => folderLinks.filter((l) => l.folderId === folderId).sort((a, b) => a.order - b.order),
-    [folderLinks, folderId],
+  const folder = useMemo(
+    () =>
+      wsParsed && wsFolder
+        ? workspaceFolderToFolder(wsFolder)
+        : folders.find((f) => f.id === folderId),
+    [wsParsed, wsFolder, folders, folderId],
   );
 
-  const secrets = useMemo(
-    () => folderSecrets.filter((s) => s.folderId === folderId).sort((a, b) => a.order - b.order),
-    [folderSecrets, folderId],
-  );
+  const links = useMemo(() => {
+    if (wsParsed && rawWorkspaceFolderId) {
+      return wsLinks.map(workspaceLinkToFolderLink).sort((a, b) => a.order - b.order);
+    }
+    return folderLinks.filter((l) => l.folderId === folderId).sort((a, b) => a.order - b.order);
+  }, [folderLinks, folderId, wsParsed, rawWorkspaceFolderId, wsLinks]);
+
+  const secrets = useMemo(() => {
+    if (wsParsed && rawWorkspaceFolderId) {
+      return wsSecrets.map(workspaceSecretToFolderSecret).sort((a, b) => a.order - b.order);
+    }
+    return folderSecrets.filter((s) => s.folderId === folderId).sort((a, b) => a.order - b.order);
+  }, [folderSecrets, folderId, wsParsed, rawWorkspaceFolderId, wsSecrets]);
+
+  const displayNotes = useMemo(() => {
+    if (wsParsed && rawWorkspaceFolderId) {
+      return wsNotes.map(workspaceNoteToNote);
+    }
+    return notes;
+  }, [notes, wsParsed, rawWorkspaceFolderId, wsNotes]);
 
   const tasks = useMemo(
     () =>
-      notes
+      displayNotes
         .filter((n) => n.folderId === folderId && n.isTask)
         .sort((a, b) => {
           if (!a.scheduledAt && !b.scheduledAt) return a.order - b.order;
@@ -418,45 +470,56 @@ export function FolderOverview({ folderId, onMobileBack }: FolderOverviewProps) 
           if (!b.scheduledAt) return 1;
           return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
         }),
-    [notes, folderId],
+    [displayNotes, folderId],
   );
 
-  const noteCount = notes.filter((n) => n.folderId === folderId).length;
+  const noteCount = displayNotes.filter((n) => n.folderId === folderId && !n.isTask).length;
   const linkMap = useMemo(() => Object.fromEntries(links.map((l) => [l.id, l.title])), [links]);
 
   const handleSaveLink = (title: string, url: string) => {
-    if (editingLink) updateFolderLink(editingLink.id, { title, url });
+    if (wsParsed && rawWorkspaceFolderId) {
+      const store = useCompanyStore.getState();
+      if (editingLink) void store.updateWorkspaceLink(editingLink.id, { title, url });
+      else void store.createWorkspaceLink(rawWorkspaceFolderId, title, url);
+    } else if (editingLink) updateFolderLink(editingLink.id, { title, url });
     else createFolderLink(folderId, title, url);
     setEditingLink(null);
   };
 
   const handleSaveSecret = (data: SecretFormData) => {
-    if (editingSecret) updateFolderSecret(editingSecret.id, data);
+    if (wsParsed && rawWorkspaceFolderId) {
+      const store = useCompanyStore.getState();
+      if (editingSecret) void store.updateWorkspaceSecret(editingSecret.id, data);
+      else void store.createWorkspaceSecret(rawWorkspaceFolderId, data);
+    } else if (editingSecret) updateFolderSecret(editingSecret.id, data);
     else createFolderSecret(folderId, data);
     setEditingSecret(null);
   };
 
   const handleNewTask = () => {
     const id = createNote(folderId, 'New Task');
-    updateNote(id, { isTask: true, calendarColor: folder?.calendarColor ?? 'blue' });
+    updateNote(id, {
+      isTask: true,
+      calendarColor: folder?.calendarColor ?? 'blue',
+      personalTaskMeta: { status: 'todo' },
+    });
   };
 
-  const openAddSecret = () => {
+  const openAddSecret = useCallback(() => {
     setEditingSecret(null);
     setSecretDialogOpenLocal(true);
-  };
+  }, []);
 
   useEffect(() => {
     if (folderDialogRequest === 'secret') {
       openAddSecret();
       clearFolderDialogRequest();
-    }
-    if (folderDialogRequest === 'link') {
+    } else if (folderDialogRequest === 'link') {
       setEditingLink(null);
       setLinkDialogOpen(true);
       clearFolderDialogRequest();
     }
-  }, [folderDialogRequest, clearFolderDialogRequest]);
+  }, [folderDialogRequest, clearFolderDialogRequest, openAddSecret]);
 
   if (!folder) return null;
 
@@ -549,7 +612,13 @@ export function FolderOverview({ folderId, onMobileBack }: FolderOverviewProps) 
                       setLinkDialogOpen(true);
                     }}
                     onDelete={() => setDeleteLinkTarget(link)}
-                    onTogglePin={() => togglePinFolderLink(link.id)}
+                    onTogglePin={() => {
+                      if (wsParsed && rawWorkspaceFolderId) {
+                        void useCompanyStore
+                          .getState()
+                          .updateWorkspaceLink(link.id, { pinned: !link.pinned });
+                      } else togglePinFolderLink(link.id);
+                    }}
                   />
                 ))}
               </div>
@@ -625,7 +694,12 @@ export function FolderOverview({ folderId, onMobileBack }: FolderOverviewProps) 
         confirmLabel="Delete"
         danger
         onConfirm={() => {
-          if (deleteLinkTarget) deleteFolderLink(deleteLinkTarget.id);
+          if (!deleteLinkTarget) return;
+          if (wsParsed && rawWorkspaceFolderId) {
+            void useCompanyStore
+              .getState()
+              .deleteWorkspaceLink(deleteLinkTarget.id, rawWorkspaceFolderId);
+          } else deleteFolderLink(deleteLinkTarget.id);
         }}
         onClose={() => setDeleteLinkTarget(null)}
       />
@@ -640,7 +714,12 @@ export function FolderOverview({ folderId, onMobileBack }: FolderOverviewProps) 
         confirmLabel="Delete"
         danger
         onConfirm={() => {
-          if (deleteSecretTarget) deleteFolderSecret(deleteSecretTarget.id);
+          if (!deleteSecretTarget) return;
+          if (wsParsed && rawWorkspaceFolderId) {
+            void useCompanyStore
+              .getState()
+              .deleteWorkspaceSecret(deleteSecretTarget.id, rawWorkspaceFolderId);
+          } else deleteFolderSecret(deleteSecretTarget.id);
         }}
         onClose={() => setDeleteSecretTarget(null)}
       />

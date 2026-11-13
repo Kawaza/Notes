@@ -4,6 +4,7 @@ import type {
   FolderLink,
   FolderSecret,
   Note,
+  FolderDeletion,
   NoteDeletion,
   Theme,
 } from '../types';
@@ -13,6 +14,7 @@ export interface SyncPayload {
   folders: Folder[];
   notes: Note[];
   noteDeletions: NoteDeletion[];
+  folderDeletions: FolderDeletion[];
   folderLinks: FolderLink[];
   folderSecrets: FolderSecret[];
   theme: Theme;

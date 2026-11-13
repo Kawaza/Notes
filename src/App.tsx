@@ -14,11 +14,12 @@ import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { useStore } from './store/useStore';
 import { Sidebar } from './components/Sidebar';
 import { NoteList } from './components/NoteList';
+import { MyTasksView } from './components/MyTasksView';
 import { Editor } from './components/Editor';
 import { CalendarView } from './components/CalendarView';
 import { FolderOverview } from './components/FolderOverview';
 import { GlobalSearch } from './components/GlobalSearch';
-import { SettingsPanel } from './components/SettingsPanel';
+import { SettingsView } from './components/SettingsView';
 import { DndDragOverlay } from './components/DndDragOverlay';
 import { UpdateBanner } from './components/UpdateUI';
 import { useAppUpdater } from './hooks/useAppUpdater';
@@ -32,7 +33,7 @@ import {
 } from './utils/folderDragCollision';
 import { dndLog, dndFail } from './utils/dndDebug';
 import {
-  ALL_NOTES_ID,
+  MY_TASKS_ID,
   SORTABLE_FOLDER_PREFIX,
   folderIdFromSortable,
   getNewNoteFolderId,
@@ -47,7 +48,10 @@ import { useIsMobile } from './hooks/useIsMobile';
 import { useIsCoarsePointer, useIsLandscape } from './hooks/useOrientation';
 import { useAuthStore } from './store/authStore';
 import { useCloudSync } from './hooks/useCloudSync';
+import { useAuthDeepLink } from './hooks/useAuthDeepLink';
 import { AuthScreen } from './components/AuthScreen';
+import { AuthEmailConfirmed } from './components/AuthEmailConfirmed';
+import { isAuthConfirmedRoute } from './sync/authRedirect';
 import { isSupabaseConfigured } from './sync/supabaseClient';
 
 export default function App() {
@@ -107,15 +111,17 @@ export default function App() {
     !landscapeFocusActive &&
     viewMode === 'notes' &&
     !selectedNoteId &&
-    selectedFolderId !== ALL_NOTES_ID &&
+    selectedFolderId !== MY_TASKS_ID &&
     mobileFolderPane === 'overview';
   const showMobileNoteList =
     usePhoneLayout &&
     !landscapeFocusActive &&
     viewMode === 'notes' &&
     !selectedNoteId &&
-    !showMobileFolderOverview;
-  const showMobileEditor = usePhoneLayout && viewMode === 'notes' && !!selectedNoteId;
+    !showMobileFolderOverview &&
+    selectedFolderId !== MY_TASKS_ID;
+  const showMobileEditor =
+    usePhoneLayout && viewMode === 'notes' && !!selectedNoteId && selectedFolderId !== MY_TASKS_ID;
   const showLandscapePickNote =
     landscapeFocusActive && viewMode === 'notes' && !selectedNoteId;
 
@@ -127,8 +133,9 @@ export default function App() {
 
   useKeyboardShortcuts();
   useCloudSync();
+  useAuthDeepLink();
 
-  const requiresAuth = !isElectron && isSupabaseConfigured();
+  const requiresAuth = isSupabaseConfigured();
 
   useEffect(() => {
     void initAuth();
@@ -388,7 +395,7 @@ export default function App() {
       return;
     }
 
-    if (!selectedFolderId || selectedFolderId === ALL_NOTES_ID) {
+    if (!selectedFolderId || selectedFolderId === MY_TASKS_ID) {
       dndLog('note drag → abort', { reason: 'all notes view, not a folder target', overId });
       return;
     }
@@ -412,6 +419,10 @@ export default function App() {
       clearDragState();
     }
   };
+
+  if (isAuthConfirmedRoute()) {
+    return <AuthEmailConfirmed />;
+  }
 
   if (authLoading || (requiresAuth && session && !hydrated) || (!requiresAuth && !hydrated)) {
     return (
@@ -476,17 +487,25 @@ export default function App() {
             />
           )}
           <Sidebar forceDrawer={landscapeFocusActive} />
-          {viewMode === 'calendar' ? (
+          {viewMode === 'settings' ? (
+            <SettingsView
+              updateState={updateState}
+              isElectron={isElectron}
+              checkForUpdates={checkForUpdates}
+              downloadUpdate={downloadUpdate}
+              installUpdate={installUpdate}
+            />
+          ) : viewMode === 'calendar' ? (
             <CalendarView onOpenNav={() => setMobileNavOpen(true)} />
+          ) : selectedFolderId === MY_TASKS_ID ? (
+            <MyTasksView onOpenNav={usePhoneLayout ? () => setMobileNavOpen(true) : undefined} />
           ) : usePhoneLayout ? (
             <>
               {showMobileNoteList && (
                 <NoteList
                   onOpenNav={() => setMobileNavOpen(true)}
                   onShowFolderOverview={() => setMobileFolderPane('overview')}
-                  showFolderOverviewToggle={
-                    !!selectedFolderId && selectedFolderId !== ALL_NOTES_ID
-                  }
+                  showFolderOverviewToggle={!!selectedFolderId}
                 />
               )}
               {showMobileFolderOverview && selectedFolderId && (
@@ -527,13 +546,6 @@ export default function App() {
         </div>
       </div>
       <GlobalSearch />
-      <SettingsPanel
-        updateState={updateState}
-        isElectron={isElectron}
-        checkForUpdates={checkForUpdates}
-        downloadUpdate={downloadUpdate}
-        installUpdate={installUpdate}
-      />
       <DndDragOverlay activeId={activeDragId} />
     </DndContext>
   );

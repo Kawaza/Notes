@@ -44,7 +44,7 @@ export function AddFolderMenu({
   return (
     <div
       ref={ref}
-      className="fixed z-50 min-w-[180px] py-1 rounded-lg border border-border bg-background shadow-lg animate-in fade-in slide-in-from-top-1 duration-100"
+      className="fixed z-50 min-w-[220px] py-1 rounded-lg border border-border bg-background shadow-lg animate-in fade-in slide-in-from-top-1 duration-100"
       style={{ top, left }}
     >
       <button

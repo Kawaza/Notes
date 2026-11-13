@@ -12,7 +12,13 @@ export const NoteImage = Image.extend<NoteImageOptions>({
       inline: parent?.inline ?? false,
       allowBase64: parent?.allowBase64 ?? false,
       HTMLAttributes: parent?.HTMLAttributes ?? {},
-      resize: parent?.resize ?? false,
+      resize: parent?.resize ?? {
+        enabled: true,
+        directions: ['bottom-right', 'bottom-left', 'top-right', 'top-left'],
+        minWidth: 80,
+        minHeight: 80,
+        alwaysPreserveAspectRatio: true,
+      },
       touchPreview: false,
     };
   },

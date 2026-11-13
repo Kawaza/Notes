@@ -1,28 +1,25 @@
 import { marked } from 'marked';
 import TurndownService from 'turndown';
+import { strikethrough } from 'turndown-plugin-gfm';
+import {
+  restoreTaskListMarkers,
+  replaceTaskListsWithMarkers,
+  upgradeTaskListsForTipTap,
+} from './markdownTasks';
 
 const turndown = new TurndownService({
   headingStyle: 'atx',
   codeBlockStyle: 'fenced',
 });
 
-turndown.addRule('taskList', {
-  filter: (node) =>
-    node.nodeName === 'LI' &&
-    node.parentNode?.nodeName === 'UL' &&
-    (node as HTMLElement).getAttribute('data-type') === 'taskItem',
-  replacement: (_content, node) => {
-    const el = node as HTMLElement;
-    const checked = el.querySelector('input[type="checkbox"]')?.hasAttribute('checked');
-    const text = el.textContent?.trim() || '';
-    return `- [${checked ? 'x' : ' '}] ${text}\n`;
-  },
-});
+strikethrough(turndown);
 
 export function htmlToMarkdown(html: string): string {
   if (!html || html === '<p></p>') return '';
   try {
-    return turndown.turndown(html);
+    const { html: stripped, blocks } = replaceTaskListsWithMarkers(html);
+    const md = turndown.turndown(stripped).trim();
+    return restoreTaskListMarkers(md, blocks);
   } catch {
     return html;
   }
@@ -30,7 +27,8 @@ export function htmlToMarkdown(html: string): string {
 
 export function markdownToHtml(md: string): string {
   if (!md) return '';
-  return marked.parse(md, { async: false, gfm: true, breaks: true }) as string;
+  const html = marked.parse(md, { async: false, gfm: true, breaks: true }) as string;
+  return upgradeTaskListsForTipTap(html);
 }
 
 const WIKI_LINK_REGEX = /\[\[([^\]]+)\]\]/g;

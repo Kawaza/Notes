@@ -109,18 +109,22 @@ export function UpdateSettingsSection({
   onCheck,
   onDownload,
   onInstall,
+  embedded = false,
 }: {
   state: UpdateUiState;
   appVersion: string | null;
   onCheck: () => void;
   onDownload: () => void;
   onInstall: () => void;
+  embedded?: boolean;
 }) {
   return (
     <section>
-      <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">
-        Updates
-      </h3>
+      {!embedded && (
+        <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">
+          Updates
+        </h3>
+      )}
       <p className="text-sm text-muted-foreground mb-3">Version {appVersion ?? '…'}</p>
 
       {state.status === 'available' && (

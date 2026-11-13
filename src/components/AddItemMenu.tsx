@@ -1,15 +1,25 @@
 import { useEffect, useRef } from 'react';
-import { FileText, Link2, KeyRound } from 'lucide-react';
+import { CalendarClock, FileText, Link2, KeyRound } from 'lucide-react';
 
 interface AddItemMenuProps {
   anchorRef: React.RefObject<HTMLElement | null>;
   onClose: () => void;
   onNewNote: () => void;
-  onQuickLink: () => void;
+  onQuickLink?: () => void;
   onSecret?: () => void;
+  onNewTask?: () => void;
+  newNoteLabel?: string;
 }
 
-export function AddItemMenu({ anchorRef, onClose, onNewNote, onQuickLink, onSecret }: AddItemMenuProps) {
+export function AddItemMenu({
+  anchorRef,
+  onClose,
+  onNewNote,
+  onQuickLink,
+  onSecret,
+  onNewTask,
+  newNoteLabel = 'New Note',
+}: AddItemMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -51,18 +61,32 @@ export function AddItemMenu({ anchorRef, onClose, onNewNote, onQuickLink, onSecr
         className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-muted transition-colors cursor-pointer"
       >
         <FileText size={15} className="text-muted-foreground" />
-        New Note
+        {newNoteLabel}
       </button>
-      <button
-        onClick={() => {
-          onQuickLink();
-          onClose();
-        }}
-        className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-muted transition-colors cursor-pointer"
-      >
-        <Link2 size={15} className="text-muted-foreground" />
-        Quick Link
-      </button>
+      {onNewTask && (
+        <button
+          onClick={() => {
+            onNewTask();
+            onClose();
+          }}
+          className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-muted transition-colors cursor-pointer"
+        >
+          <CalendarClock size={15} className="text-muted-foreground" />
+          Add Task
+        </button>
+      )}
+      {onQuickLink && (
+        <button
+          onClick={() => {
+            onQuickLink();
+            onClose();
+          }}
+          className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-muted transition-colors cursor-pointer"
+        >
+          <Link2 size={15} className="text-muted-foreground" />
+          Quick Link
+        </button>
+      )}
       {onSecret && (
         <button
           onClick={() => {

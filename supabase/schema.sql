@@ -1,3 +1,4 @@
+-- DEPRECATED: use supabase/00-full-schema.sql for new projects (encryption + company tables).
 -- Run this in the Supabase SQL editor for your project.
 -- Dashboard → SQL → New query → paste → Run
 

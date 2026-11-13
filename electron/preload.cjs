@@ -29,4 +29,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onQuickCapture: (callback) => {
     ipcRenderer.on('quick-capture', () => callback());
   },
+  onAuthCallbackUrl: (callback) => {
+    const listener = (_event, url) => callback(url);
+    ipcRenderer.on('auth-callback-url', listener);
+    return () => ipcRenderer.removeListener('auth-callback-url', listener);
+  },
 });

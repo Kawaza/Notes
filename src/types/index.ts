@@ -43,6 +43,8 @@ export interface NoteAttachment {
   mimeType: string;
 }
 
+import type { WorkspaceTaskStatus } from './company';
+
 export interface Note {
   id: string;
   /** Null when the note is only listed under All Notes (no folder). */
@@ -60,9 +62,35 @@ export interface Note {
   isTask: boolean;
   order: number;
   calendarColor?: string;
+  /** Time block on the calendar only — not a My Tasks item. */
+  isCalendarBlock?: boolean;
+  /** When set, this calendar block was linked from My Tasks / company tasks (does not file into a folder). */
+  linkedTaskId?: string | null;
+  /** Populated for shared company workspace tasks in list/editor views. */
+  workspaceTaskMeta?: {
+    assigneeId: string | null;
+    status: WorkspaceTaskStatus;
+    dueAt?: string;
+    rawFolderId: string;
+    companyId: string;
+  };
+  /** Personal-folder tasks (assignee is always you). */
+  personalTaskMeta?: {
+    status: WorkspaceTaskStatus;
+    dueAt?: string;
+  };
 }
 
-export type ViewMode = 'notes' | 'calendar';
+export type ViewMode = 'notes' | 'calendar' | 'settings';
+
+export type SettingsTab =
+  | 'appearance'
+  | 'security'
+  | 'cloud-sync'
+  | 'backup'
+  | 'account'
+  | 'company'
+  | 'updates';
 export type Theme = 'light' | 'dark';
 export type ColorPalette = 'default' | 'ocean' | 'forest' | 'sunset' | 'rose' | 'pink' | 'pastel' | 'yellow' | 'sky';
 
@@ -78,6 +106,8 @@ export function folderIdFromSortable(sortableId: string) {
     : sortableId;
 }
 export const ALL_NOTES_ID = 'all';
+/** Sidebar view: tasks assigned to you (personal + company workspace). */
+export const MY_TASKS_ID = 'my-tasks';
 /** Legacy inbox id — stripped on migrate; notes/folders referencing it become unfiled. */
 export const DEFAULT_FOLDER_ID = 'inbox';
 export const DEFAULT_FOLDERS_SECTION_NAME = 'Folders';
@@ -119,7 +149,15 @@ export function isNoteFolder(folder: Folder | undefined): boolean {
 
 /** Folder id for a newly created note from the current sidebar selection. */
 export function getNewNoteFolderId(selectedFolderId: string | null): string | null {
-  return selectedFolderId && selectedFolderId !== ALL_NOTES_ID ? selectedFolderId : null;
+  if (
+    !selectedFolderId ||
+    selectedFolderId === ALL_NOTES_ID ||
+    selectedFolderId === MY_TASKS_ID ||
+    selectedFolderId.startsWith('wsf-archive:')
+  ) {
+    return null;
+  }
+  return selectedFolderId;
 }
 
 export function notesInFolder(notes: Note[], folderId: string | null): Note[] {
@@ -134,11 +172,18 @@ export interface NoteDeletion {
   deletedAt: string;
 }
 
+/** Tombstone so folder deletes sync across devices (merge would otherwise restore removed folders). */
+export interface FolderDeletion {
+  id: string;
+  deletedAt: string;
+}
+
 export interface AppData {
   folders: Folder[];
   notes: Note[];
   /** Note ids deleted locally/cloud — kept until all clients have merged. */
   noteDeletions?: NoteDeletion[];
+  folderDeletions?: FolderDeletion[];
   folderLinks: FolderLink[];
   folderSecrets: FolderSecret[];
   theme: Theme;
@@ -151,6 +196,9 @@ export interface AppData {
   foldersSectionName: string;
   /** When true, landscape on touch devices shows only the open note (hide note list). */
   mobileLandscapeFocus?: boolean;
+  sidebarShowPersonalFolders?: boolean;
+  sidebarShowArchive?: boolean;
+  sidebarShowWorkspace?: boolean;
 }
 
 export interface NoteTemplate {
@@ -196,6 +244,7 @@ declare global {
       writeFile: (path: string, content: string) => Promise<boolean>;
       readFile: (path: string) => Promise<string | null>;
       onQuickCapture: (callback: () => void) => void;
+      onAuthCallbackUrl?: (callback: (url: string) => void) => () => void;
     };
   }
 }
