@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMobileKeyboardInset } from '../hooks/useMobileKeyboardInset';
 import { useIsMobile, usePrefersCoarsePointer } from '../hooks/useIsMobile';
 import { ImageLightbox, useNoteImageLightbox, type LightboxImage } from './ImageLightbox';
@@ -152,6 +152,7 @@ export function Editor({
     [note, openLightbox],
   );
   const myAssignedTasks = useCompanyStore((s) => s.myAssignedTasks);
+  const loadFolderContent = useCompanyStore((s) => s.loadFolderContent);
 
   const workspaceTaskFolderId = useMemo(() => {
     if (note?.workspaceTaskMeta?.rawFolderId) return note.workspaceTaskMeta.rawFolderId;
@@ -162,25 +163,44 @@ export function Editor({
       const raw = note.folderId;
       return parseWorkspaceFolderSelectionId(raw)?.folderId ?? null;
     }
+    if (note?.folderId) {
+      const parsed = parseWorkspaceFolderSelectionId(note.folderId);
+      if (parsed) return parsed.folderId;
+    }
     return wsFolderId;
   }, [note?.folderId, note?.workspaceTaskMeta?.rawFolderId, note?.id, wsFolderId]);
 
+  useEffect(() => {
+    if (!workspaceTaskFolderId) return;
+    const folderTasks = tasksByFolder[workspaceTaskFolderId];
+    if (folderTasks === undefined) {
+      void loadFolderContent(workspaceTaskFolderId);
+    }
+  }, [workspaceTaskFolderId, tasksByFolder, loadFolderContent]);
+
   const workspaceTaskSuggestions = useMemo(() => {
+    const merged = new Map<string, { id: string; title: string; folderId: string }>();
+
+    const addRows = (rows: { id: string; title: string; folderId: string; archived?: boolean }[]) => {
+      for (const t of rows) {
+        if (t.archived) continue;
+        merged.set(t.id, {
+          id: t.id,
+          title: t.title || 'Untitled task',
+          folderId: t.folderId,
+        });
+      }
+    };
+
     if (workspaceTaskFolderId) {
-      return (tasksByFolder[workspaceTaskFolderId] ?? []).map((t) => ({
-        id: t.id,
-        title: t.title || 'Untitled task',
-        folderId: t.folderId,
-      }));
+      addRows(tasksByFolder[workspaceTaskFolderId] ?? []);
     }
-    if (myAssignedTasks.length > 0) {
-      return myAssignedTasks.map((t) => ({
-        id: t.id,
-        title: t.title || 'Untitled task',
-        folderId: t.folderId,
-      }));
+    for (const rows of Object.values(tasksByFolder)) {
+      addRows(rows);
     }
-    return [];
+    addRows(myAssignedTasks);
+
+    return Array.from(merged.values()).sort((a, b) => a.title.localeCompare(b.title));
   }, [tasksByFolder, workspaceTaskFolderId, myAssignedTasks]);
 
   const linkedTaskSelectionId = calendarBlock?.linkedTaskId ?? null;

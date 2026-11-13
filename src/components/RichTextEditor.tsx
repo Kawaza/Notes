@@ -229,7 +229,6 @@ function EditorInsertMenuPanel({
   left,
   onPick,
   onClose,
-  workspaceTaskSuggestions,
   onInsertImage,
 }: {
   filter: string;
@@ -237,7 +236,6 @@ function EditorInsertMenuPanel({
   left: number;
   onPick: (item: InsertBlockItem) => void;
   onClose: () => void;
-  workspaceTaskSuggestions: { id: string; title: string; folderId: string }[];
   onInsertImage: () => void;
 }) {
   const items: InsertBlockItem[] = useMemo(() => {
@@ -317,18 +315,16 @@ function EditorInsertMenuPanel({
         run: () => onInsertImage(),
       },
     ];
-    if (workspaceTaskSuggestions.length > 0) {
-      base.push({
-        id: 'task-mention',
-        label: 'Link workspace task',
-        hint: 'task:',
-        icon: <ClipboardList size={16} />,
-        keywords: ['task', 'mention', 'company'],
-        run: (ed) => ed.chain().focus().insertContent('task:').run(),
-      });
-    }
+    base.push({
+      id: 'task-mention',
+      label: 'Link workspace task',
+      hint: 'task:',
+      icon: <ClipboardList size={16} />,
+      keywords: ['task', 'mention', 'company', 'workspace', 'link'],
+      run: (ed) => ed.chain().focus().insertContent('task:').run(),
+    });
     return base;
-  }, [onInsertImage, workspaceTaskSuggestions.length]);
+  }, [onInsertImage]);
 
   const q = filter.trim().toLowerCase();
   const filtered = q
@@ -572,10 +568,6 @@ export function RichTextEditor({
   }, []);
 
   const refreshTaskMentionMenu = useCallback((ed: Editor) => {
-    if (!workspaceTaskSuggestionsRef.current.length) {
-      setTaskMention(null);
-      return;
-    }
     const { from } = ed.state.selection;
     const lookback = 48;
     const start = Math.max(0, from - lookback);
@@ -1197,7 +1189,6 @@ export function RichTextEditor({
               filter={insertMenu.filter}
               top={insertMenu.top}
               left={insertMenu.left}
-              workspaceTaskSuggestions={workspaceTaskSuggestions}
               onInsertImage={onFileClick}
               onClose={closeInsertMenu}
               onPick={(item) => {
@@ -1218,24 +1209,32 @@ export function RichTextEditor({
             />
           )}
 
-          {taskMention && taskMentionOptions.length > 0 && (
+          {taskMention && (
             <div
               className="fixed z-50 min-w-[200px] max-w-sm py-1 rounded-lg border border-border bg-background shadow-lg"
               style={{ top: taskMention.top, left: taskMention.left }}
             >
-              {taskMentionOptions.map((task) => (
-                <button
-                  key={task.id}
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    insertWorkspaceTaskMention(task);
-                  }}
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted cursor-pointer truncate"
-                >
-                  {task.title || 'Untitled task'}
-                </button>
-              ))}
+              {taskMentionOptions.length === 0 ? (
+                <p className="px-3 py-2 text-xs text-muted-foreground">
+                  {workspaceTaskSuggestions.length === 0
+                    ? 'No workspace tasks loaded. Open a company folder or create a task.'
+                    : 'No matching tasks'}
+                </p>
+              ) : (
+                taskMentionOptions.map((task) => (
+                  <button
+                    key={task.id}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      insertWorkspaceTaskMention(task);
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted cursor-pointer truncate"
+                  >
+                    {task.title || 'Untitled task'}
+                  </button>
+                ))
+              )}
             </div>
           )}
           <EditorContent editor={editor} />
