@@ -11,7 +11,7 @@ import { useStore } from '../store/useStore';
 import { useCompanyStore } from '../store/companyStore';
 import { defaultCalendarColorForPalette } from '../utils/defaultCalendarColor';
 import { resolveCalendarEventStyle } from '../utils/themeCalendarColor';
-import { resolveLinkedTaskTitle } from '../utils/linkedTaskResolve';
+import { resolveActiveLinkedTaskNote, resolveLinkedTaskTitle } from '../utils/linkedTaskResolve';
 import { Editor } from './Editor';
 import { ContextMenu } from './ContextMenu';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -21,6 +21,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const isMobile = useIsMobile();
   const notes = useStore((s) => s.notes);
+  const folders = useStore((s) => s.folders);
   const tasksByFolder = useCompanyStore((s) => s.tasksByFolder);
   const myAssignedTasks = useCompanyStore((s) => s.myAssignedTasks);
   const theme = useStore((s) => s.theme);
@@ -63,10 +64,16 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
 
   const events = useMemo(() => {
     return notes
-      .filter((n) => n.isCalendarBlock && n.scheduledAt)
+      .filter((n) => {
+        if (!n.isCalendarBlock || !n.scheduledAt) return false;
+        if (!n.linkedTaskId) return true;
+        return Boolean(
+          resolveActiveLinkedTaskNote(n.linkedTaskId, notes, tasksByFolder, myAssignedTasks, folders),
+        );
+      })
       .map((n) => {
         const title = n.linkedTaskId
-          ? resolveLinkedTaskTitle(n.linkedTaskId, notes, tasksByFolder, myAssignedTasks)
+          ? resolveLinkedTaskTitle(n.linkedTaskId, notes, tasksByFolder, myAssignedTasks, folders)
           : n.title || 'Untitled';
         const style = resolveCalendarEventStyle(
           n.calendarColor ?? defaultCalendarColorForPalette(colorPalette),
@@ -83,7 +90,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
           textColor: style.textColor,
         };
       });
-  }, [notes, tasksByFolder, myAssignedTasks, isDark, colorPalette]);
+  }, [notes, folders, tasksByFolder, myAssignedTasks, isDark, colorPalette]);
 
   const handleEventClick = (info: EventClickArg) => {
     setPanelNoteId(info.event.id);
@@ -131,6 +138,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
     setPanelNoteId(null);
   };
 
+  /** Drops the time block only; linked task is untouched. */
   const removeFromCalendar = (noteId: string) => {
     deleteNote(noteId);
     if (panelNoteId === noteId) {
@@ -173,8 +181,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             <div className="min-w-0">
               <h2 className="text-lg font-medium">Calendar</h2>
               <p className="text-sm text-muted-foreground font-normal hidden sm:block">
-                Drag on the calendar to book time · Link blocks to tasks (same task can appear many times) ·
-                Right-click to remove a block
+                Drag to book time · Link blocks to tasks · Right-click: remove from calendar (keeps task) or delete
               </p>
             </div>
           </div>
@@ -266,7 +273,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
           onClose={() => setEventMenu(null)}
           items={[
             {
-              label: 'Remove from calendar',
+              label: 'Remove from calendar (keep task)',
               icon: <Archive size={14} />,
               onClick: () => {
                 removeFromCalendar(eventMenu.noteId);
@@ -274,7 +281,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
               },
             },
             {
-              label: 'Delete block',
+              label: 'Delete block and linked task',
               icon: <Trash2 size={14} />,
               danger: true,
               onClick: () => {
@@ -288,7 +295,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
 
       <ConfirmDialog
         open={!!deleteTarget}
-        title="Delete block?"
+        title="Delete block and task?"
         message={
           deleteTarget
             ? (() => {

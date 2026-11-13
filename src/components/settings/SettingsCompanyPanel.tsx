@@ -37,6 +37,7 @@ export function SettingsCompanyPanel() {
   const [leaveTarget, setLeaveTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [leaveBusy, setLeaveBusy] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [purgeTarget, setPurgeTarget] = useState<{ id: string; name: string } | null>(null);
   const [purgeBusy, setPurgeBusy] = useState(false);
@@ -72,11 +73,12 @@ export function SettingsCompanyPanel() {
   const confirmLeave = async () => {
     if (!leaveTarget) return;
     setLeaveBusy(true);
+    setLeaveError(null);
     try {
       await leaveWorkspace(leaveTarget.id);
       setLeaveTarget(null);
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : 'Could not leave workspace');
+      setLeaveError(err instanceof Error ? err.message : 'Could not leave workspace');
     } finally {
       setLeaveBusy(false);
     }
@@ -292,13 +294,17 @@ export function SettingsCompanyPanel() {
         title="Leave workspace?"
         message={
           leaveTarget
-            ? `You will lose access to "${leaveTarget.name}" until you join again with the invite code.`
+            ? `${leaveError ? `${leaveError}\n\n` : ''}You will lose access to "${leaveTarget.name}" until you join again with the invite code.`
             : ''
         }
         confirmLabel={leaveBusy ? 'Leaving…' : 'Leave'}
         danger
         onConfirm={() => void confirmLeave()}
-        onClose={() => !leaveBusy && setLeaveTarget(null)}
+        onClose={() => {
+          if (leaveBusy) return;
+          setLeaveError(null);
+          setLeaveTarget(null);
+        }}
       />
       <ConfirmDialog
         open={!!deleteTarget}

@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { ensureFreshSession } from './syncUtils';
+import { ensureFreshSession, isRateLimitError } from './syncUtils';
 import { generateInviteCode, normalizeInviteCodeInput } from '../utils/inviteCode';
 import type { Company, CompanyMember, WorkspaceFolder, WorkspaceTask, WorkspaceTaskStatus } from '../types/company';
 import { profileFullName } from '../types/profile';
@@ -203,15 +203,21 @@ export async function createCompany(name: string): Promise<Company> {
 
 export async function leaveCompany(companyId: string): Promise<void> {
   if (!supabase) throw new Error('Sign in and configure cloud sync first');
+  await ensureFreshSession();
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not signed in');
+    data: { session },
+    error: sessionErr,
+  } = await supabase.auth.getSession();
+  if (sessionErr) throw sessionErr;
+  const userId = session?.user?.id;
+  if (!userId) {
+    throw new Error('Your session expired. Sign in again, then try leaving the workspace.');
+  }
   const { error } = await supabase
     .from('company_members')
     .delete()
     .eq('company_id', companyId)
-    .eq('user_id', user.id);
+    .eq('user_id', userId);
   if (error) throw error;
 }
 
@@ -285,10 +291,26 @@ export async function deleteCompany(companyId: string): Promise<void> {
 
 export async function joinCompanyByInvite(inviteCode: string): Promise<string> {
   if (!supabase) throw new Error('Sign in and configure cloud sync first');
+  await ensureFreshSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) {
+    throw new Error('Sign in first, then enter your invite code.');
+  }
+
   const code = normalizeInviteCodeInput(inviteCode);
-  const { data, error } = await supabase.rpc('join_company_by_invite', { p_invite_code: code });
-  if (error) throw error;
-  return data as string;
+  const client = supabase;
+  const run = () => client!.rpc('join_company_by_invite', { p_invite_code: code });
+
+  let result = await run();
+  if (result.error && isRateLimitError(result.error)) {
+    await new Promise((r) => setTimeout(r, 1200));
+    await ensureFreshSession();
+    result = await run();
+  }
+  if (result.error) throw result.error;
+  return result.data as string;
 }
 
 export async function fetchWorkspaceFolders(companyId: string): Promise<WorkspaceFolder[]> {

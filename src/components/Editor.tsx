@@ -617,16 +617,30 @@ export function Editor({
                 )}
               </>
             )}
-            <button
-              onClick={() => {
-                deleteNote(calendarBlockMode ? (activeNoteId ?? note.id) : note.id);
-                onClose?.();
-              }}
-              className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
-              title={calendarBlockMode ? 'Remove calendar block' : 'Delete note'}
-            >
-              <Trash2 size={16} />
-            </button>
+            {calendarBlockMode ? (
+              <button
+                onClick={() => {
+                  const blockId = calendarBlock?.id ?? activeNoteId ?? note.id;
+                  deleteNote(blockId);
+                  onClose?.();
+                }}
+                className="p-2 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
+                title="Remove from calendar (linked task stays)"
+              >
+                <Archive size={16} />
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  deleteNote(note.id);
+                  onClose?.();
+                }}
+                className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                title="Delete note"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
           </div>
         </div>
       )}
