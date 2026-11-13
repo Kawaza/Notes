@@ -11,12 +11,14 @@ export function SettingsUpdatesPanel({
   onCheck,
   onDownload,
   onInstall,
+  onClearError,
 }: {
   state: UpdateUiState;
   isElectron: boolean;
   onCheck: () => void;
   onDownload: () => void;
   onInstall: () => void | Promise<void>;
+  onClearError?: () => void;
 }) {
   const [appVersion, setAppVersion] = useState<string | null>(null);
 
@@ -44,6 +46,7 @@ export function SettingsUpdatesPanel({
           onCheck={onCheck}
           onDownload={onDownload}
           onInstall={onInstall}
+          onClearError={onClearError}
         />
       </div>
     </SettingsPanelShell>

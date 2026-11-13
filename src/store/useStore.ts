@@ -644,23 +644,31 @@ export const useStore = create<Store>((set, get) => ({
 
     if (isStale()) return;
 
+    const welcomeFolderId = uuidv4();
     const welcomeId = uuidv4();
     const now = new Date().toISOString();
     finishHydrated({
+      folders: [
+        {
+          id: welcomeFolderId,
+          name: 'Notes',
+          order: 0,
+        },
+      ],
       notes: [
         migrateNote({
           id: welcomeId,
-          folderId: null,
+          folderId: welcomeFolderId,
           title: 'Welcome to Notes',
           content: `<h1>Welcome to Notes</h1>
 <p>Your personal note-taking app. Here's what you can do:</p>
 <ul>
 <li><strong>Folders</strong> — Organize notes in the sidebar</li>
-<li><strong>Markdown mode</strong> — Toggle with the MD button in the editor</li>
-<li><strong>Wiki links</strong> — Type [[Note Title]] to link between notes</li>
-<li><strong>Tags</strong> — Add tags at the bottom of any note</li>
-<li><strong>Calendar</strong> — Schedule tasks with date/time</li>
+<li><strong>Rich editor</strong> — Headings, checklists, code blocks, and images</li>
+<li><strong>Tasks</strong> — Use the Tasks tab inside a folder, or My Tasks in the sidebar</li>
+<li><strong>Calendar</strong> — Drag on the calendar to book time blocks</li>
 <li><strong>Search</strong> — Press Ctrl+K to search everything</li>
+<li><strong>Workspace</strong> — Share company folders when you're signed in</li>
 </ul>
 <p>Press <strong>Ctrl+N</strong> for a new note, <strong>Ctrl+Shift+D</strong> to toggle dark mode.</p>`,
           contentType: 'html',
@@ -672,6 +680,7 @@ export const useStore = create<Store>((set, get) => ({
           order: 0,
         }),
       ],
+      selectedFolderId: welcomeFolderId,
       selectedNoteId: welcomeId,
     });
   },
@@ -1897,7 +1906,7 @@ export const useStore = create<Store>((set, get) => ({
     }
     if (!selectedFolderId || selectedFolderId === MY_TASKS_ID) return [];
     return notes
-      .filter((n) => n.folderId === selectedFolderId)
+      .filter((n) => n.folderId === selectedFolderId && !n.isTask && !n.isCalendarBlock)
       .sort((a, b) => a.order - b.order);
   },
 

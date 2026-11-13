@@ -63,6 +63,7 @@ export default function App() {
     downloadUpdate,
     installUpdate,
     dismissBanner,
+    clearUpdateError,
   } = useAppUpdater();
 
   const authLoading = useAuthStore((s) => s.authLoading);
@@ -494,6 +495,7 @@ export default function App() {
               checkForUpdates={checkForUpdates}
               downloadUpdate={downloadUpdate}
               installUpdate={installUpdate}
+              clearUpdateError={clearUpdateError}
             />
           ) : viewMode === 'calendar' ? (
             <CalendarView onOpenNav={() => setMobileNavOpen(true)} />

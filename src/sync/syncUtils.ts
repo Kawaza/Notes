@@ -108,6 +108,13 @@ export async function ensureFreshSession(): Promise<void> {
   if (expiresMs > 0 && expiresMs < Date.now() + 60_000) {
     const refreshed = await supabase.auth.refreshSession();
     if (refreshed.error) {
+      const lower = refreshed.error.message.toLowerCase();
+      if (
+        expiresMs > Date.now() &&
+        (lower.includes('rate limit') || lower.includes('too many requests'))
+      ) {
+        return;
+      }
       throw new Error(`Session refresh failed: ${refreshed.error.message}`);
     }
     if (!refreshed.data.session) {

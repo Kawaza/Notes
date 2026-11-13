@@ -140,7 +140,14 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
 
   const confirmDeleteEvent = () => {
     if (!deleteTarget) return;
-    removeFromCalendar(deleteTarget.noteId);
+    const block = notes.find((n) => n.id === deleteTarget.noteId);
+    if (block?.linkedTaskId) {
+      deleteNote(block.linkedTaskId);
+    }
+    deleteNote(deleteTarget.noteId);
+    if (panelNoteId === deleteTarget.noteId) {
+      setPanelNoteId(null);
+    }
     setDeleteTarget(null);
   };
 
@@ -284,7 +291,13 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
         title="Delete block?"
         message={
           deleteTarget
-            ? `"${deleteTarget.title}" will be removed from your calendar. The linked task is not deleted.`
+            ? (() => {
+                const block = notes.find((n) => n.id === deleteTarget.noteId);
+                if (block?.linkedTaskId) {
+                  return `"${deleteTarget.title}" and its linked task will be permanently deleted.`;
+                }
+                return `"${deleteTarget.title}" will be permanently deleted.`;
+              })()
             : ''
         }
         confirmLabel="Delete"

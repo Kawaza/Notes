@@ -57,7 +57,9 @@ function useDisplayedNotes() {
         .sort((a, b) => a.order - b.order);
     }
     if (!selectedFolderId || selectedFolderId === MY_TASKS_ID) return [];
-    const filtered = allNotes.filter((n) => n.folderId === selectedFolderId);
+    const filtered = allNotes.filter(
+      (n) => n.folderId === selectedFolderId && !n.isTask && !n.isCalendarBlock,
+    );
     return [...filtered].sort((a, b) => a.order - b.order);
   }, [allNotes, folders, selectedFolderId, notesByFolder, foldersByCompany]);
 }

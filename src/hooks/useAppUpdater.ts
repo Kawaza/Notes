@@ -73,11 +73,20 @@ export function useAppUpdater() {
     window.electronAPI?.installUpdate?.();
   }, []);
 
-  const dismissBanner = useCallback(() => setDismissed(true), []);
+  const clearUpdateError = useCallback(() => {
+    setState((prev) => (prev.status === 'error' ? { status: 'idle' } : prev));
+  }, []);
 
-  const bannerState = dismissed && (state.status === 'available' || state.status === 'ready')
-    ? { status: 'idle' as const }
-    : state;
+  const dismissBanner = useCallback(() => {
+    setDismissed(true);
+    clearUpdateError();
+  }, [clearUpdateError]);
+
+  const bannerState =
+    dismissed &&
+    (state.status === 'available' || state.status === 'ready' || state.status === 'error')
+      ? { status: 'idle' as const }
+      : state;
 
   return {
     state,
@@ -87,5 +96,6 @@ export function useAppUpdater() {
     downloadUpdate,
     installUpdate,
     dismissBanner,
+    clearUpdateError,
   };
 }

@@ -124,6 +124,17 @@ function scheduleRetryCheck(reason, delayMs, manual = false) {
   }, delayMs);
 }
 
+function friendlyUpdateErrorMessage(message) {
+  const msg = String(message ?? '');
+  if (msg.includes('latest.yml')) {
+    return 'No update manifest on GitHub for this release. Install the latest .exe from GitHub Releases, or try again after a proper release is published.';
+  }
+  if (msg.length > 240) {
+    return 'Update check failed. Open Settings → Updates to try again, or download the installer from GitHub Releases.';
+  }
+  return msg || 'Update failed';
+}
+
 function handleUpdateError(err, manual) {
   const message = err?.message ?? String(err);
   console.error('[updater]', message);
@@ -152,7 +163,7 @@ function handleUpdateError(err, manual) {
 
   manualRetryAttempts = 0;
   if (manual) {
-    sendStatus({ type: 'error', message: message || 'Update failed' });
+    sendStatus({ type: 'error', message: friendlyUpdateErrorMessage(message) });
   }
   manualCheckPending = false;
 }

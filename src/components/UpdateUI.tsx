@@ -109,6 +109,7 @@ export function UpdateSettingsSection({
   onCheck,
   onDownload,
   onInstall,
+  onClearError,
   embedded = false,
 }: {
   state: UpdateUiState;
@@ -116,6 +117,7 @@ export function UpdateSettingsSection({
   onCheck: () => void;
   onDownload: () => void;
   onInstall: () => void;
+  onClearError?: () => void;
   embedded?: boolean;
 }) {
   return (
@@ -175,7 +177,16 @@ export function UpdateSettingsSection({
       )}
 
       {state.status === 'error' && (
-        <p className="text-xs text-destructive mb-3">{state.message}</p>
+        <div className="mb-3 p-3 rounded-lg border border-destructive/30 bg-destructive/5 text-sm space-y-2">
+          <p className="text-xs text-destructive leading-relaxed">{state.message}</p>
+          <button
+            type="button"
+            onClick={() => (onClearError ? onClearError() : onCheck())}
+            className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
       )}
 
       {state.status === 'checking' && (

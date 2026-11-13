@@ -17,6 +17,7 @@ export type SettingsViewProps = {
   checkForUpdates: () => void;
   downloadUpdate: () => void;
   installUpdate: () => void | Promise<void>;
+  clearUpdateError?: () => void;
 };
 
 function syncStatusLabel(status: SyncStatus, error: string | null): { text: string; ok: boolean } {
@@ -68,6 +69,7 @@ export function SettingsView({
   checkForUpdates,
   downloadUpdate,
   installUpdate,
+  clearUpdateError,
 }: SettingsViewProps) {
   const setViewMode = useStore((s) => s.setViewMode);
   const settingsTab = useStore((s) => s.settingsTab);
@@ -101,6 +103,7 @@ export function SettingsView({
             onCheck={checkForUpdates}
             onDownload={downloadUpdate}
             onInstall={installUpdate}
+            onClearError={clearUpdateError}
           />
         );
       default:

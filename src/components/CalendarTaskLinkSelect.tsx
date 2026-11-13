@@ -83,7 +83,7 @@ export function CalendarTaskLinkSelect({
   const linkedId = note.linkedTaskId ?? null;
 
   const selectedLabel = useMemo(() => {
-    if (!linkedId) return 'No folder';
+    if (!linkedId) return 'Add task';
     if (workspaceTasks.some((t) => t.id === linkedId)) {
       return workspaceTasks.find((t) => t.id === linkedId)!.title;
     }
@@ -97,13 +97,21 @@ export function CalendarTaskLinkSelect({
     const el = rootRef.current;
     if (!el) return null;
     const rect = el.getBoundingClientRect();
-    const menuHeight = menuRef.current?.offsetHeight ?? estimateMenuHeight(itemCount);
+    const menuWidth = Math.min(280, Math.max(rect.width, 200));
+    const menuHeight = Math.min(
+      menuRef.current?.offsetHeight ?? estimateMenuHeight(itemCount),
+      Math.floor(window.innerHeight * 0.5),
+    );
     const spaceBelow = window.innerHeight - rect.bottom - MENU_GAP;
     const spaceAbove = rect.top - MENU_GAP;
     const openAbove = menuHeight > spaceBelow && spaceAbove >= spaceBelow;
+    const rawTop = openAbove ? rect.top - MENU_GAP - menuHeight : rect.bottom + MENU_GAP;
+    const rawLeft = rect.left;
+    const top = Math.max(8, Math.min(rawTop, window.innerHeight - menuHeight - 8));
+    const left = Math.max(8, Math.min(rawLeft, window.innerWidth - menuWidth - 8));
     return {
-      top: openAbove ? rect.top - MENU_GAP - menuHeight : rect.bottom + MENU_GAP,
-      left: rect.left,
+      top,
+      left,
       minWidth: rect.width,
     };
   };
@@ -180,7 +188,7 @@ export function CalendarTaskLinkSelect({
           }`}
         >
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
-          <span className="truncate">No folder — planning only</span>
+          <span className="truncate">Planning only (no task)</span>
         </button>
         {(personalTasks.length > 0 || workspaceTasks.length > 0) && (
           <div className="my-1 border-t border-border" />
