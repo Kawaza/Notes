@@ -6,6 +6,7 @@ import {
   CalendarClock,
   Star,
   Search,
+  Bell,
   Settings,
   Pencil,
   Trash2,
@@ -26,6 +27,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useStore } from '../store/useStore';
+import { useNotificationStore } from '../store/notificationStore';
 import { NotesLogo } from './NotesLogo';
 import { SidebarAccountChip } from './SidebarAccountChip';
 import {
@@ -848,6 +850,8 @@ export function Sidebar({ forceDrawer = false }: { forceDrawer?: boolean } = {})
   const setSearchOpen = useStore((s) => s.setSearchOpen);
   const mobileNavOpen = useStore((s) => s.mobileNavOpen);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
+  const openNotifications = useStore((s) => s.openNotifications);
+  const notificationUnread = useNotificationStore((s) => s.items.filter((n) => !n.read).length);
   const foldersSectionName = useStore((s) => s.foldersSectionName);
   const setFoldersSectionName = useStore((s) => s.setFoldersSectionName);
   const notes = useStore((s) => s.notes);
@@ -1346,6 +1350,23 @@ export function Sidebar({ forceDrawer = false }: { forceDrawer?: boolean } = {})
       </nav>
 
       <div className="border-t border-border p-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] space-y-1">
+        <button
+          type="button"
+          onClick={() => openNotifications()}
+          className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-sm transition-colors cursor-pointer ${
+            viewMode === 'notifications'
+              ? 'bg-primary/10 text-primary font-medium'
+              : 'hover:bg-muted text-foreground/70'
+          }`}
+        >
+          <Bell size={16} />
+          <span className="flex-1 text-left">Notifications</span>
+          {notificationUnread > 0 && (
+            <span className="min-w-[1.25rem] rounded-full bg-primary text-primary-foreground text-[10px] font-semibold px-1.5 py-0.5 text-center tabular-nums">
+              {notificationUnread > 99 ? '99+' : notificationUnread}
+            </span>
+          )}
+        </button>
         <button
           type="button"
           onClick={() => setSettingsOpen(true, 'appearance')}

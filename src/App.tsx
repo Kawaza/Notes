@@ -20,6 +20,8 @@ import { CalendarView } from './components/CalendarView';
 import { FolderOverview } from './components/FolderOverview';
 import { GlobalSearch } from './components/GlobalSearch';
 import { SettingsView } from './components/SettingsView';
+import { NotificationsView } from './components/NotificationsView';
+import { NotificationToasts } from './components/NotificationToasts';
 import { DndDragOverlay } from './components/DndDragOverlay';
 import { UpdateBanner } from './components/UpdateUI';
 import { useAppUpdater } from './hooks/useAppUpdater';
@@ -497,6 +499,8 @@ export default function App() {
               installUpdate={installUpdate}
               clearUpdateError={clearUpdateError}
             />
+          ) : viewMode === 'notifications' ? (
+            <NotificationsView />
           ) : viewMode === 'calendar' ? (
             <CalendarView onOpenNav={() => setMobileNavOpen(true)} />
           ) : selectedFolderId === MY_TASKS_ID ? (
@@ -546,6 +550,7 @@ export default function App() {
             </>
           )}
         </div>
+        <NotificationToasts />
       </div>
       <GlobalSearch />
       <DndDragOverlay activeId={activeDragId} />

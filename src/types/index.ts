@@ -81,7 +81,7 @@ export interface Note {
   };
 }
 
-export type ViewMode = 'notes' | 'calendar' | 'settings';
+export type ViewMode = 'notes' | 'calendar' | 'notifications' | 'settings';
 
 export type SettingsTab =
   | 'appearance'

@@ -93,6 +93,7 @@ interface Store extends AppData {
   toggleTheme: () => void;
   setColorPalette: (palette: ColorPalette) => void;
   setViewMode: (mode: ViewMode) => void;
+  openNotifications: () => void;
   selectMyTasks: () => void;
   createWorkspaceTask: (assigneeId: string | null, title?: string) => string | null;
   createPersonalTask: (title?: string) => string | null;
@@ -858,6 +859,13 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   setViewMode: (viewMode) => set({ viewMode, mobileNavOpen: false }),
+
+  openNotifications: () =>
+    set({
+      viewMode: 'notifications',
+      settingsOpen: false,
+      mobileNavOpen: false,
+    }),
 
   selectMyTasks: () => {
     set({

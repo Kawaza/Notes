@@ -58,6 +58,7 @@ import {
   queueWorkspaceNotePersist,
   setWorkspaceNoteServerRevision,
 } from '../sync/workspaceNotePersistence';
+import { maybeNotifyWorkspaceTaskAssigned } from '../utils/workspaceTaskNotifications';
 
 function companyIdForFolder(
   foldersByCompany: Record<string, WorkspaceFolder[]>,
@@ -817,6 +818,16 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
   applyRemoteWorkspaceTask: (task) => {
     const userId = useAuthStore.getState().user?.id ?? null;
     const folderId = task.folderId;
+    const existingBefore = get().tasksByFolder[folderId]?.find((t) => t.id === task.id);
+    const staleRemote =
+      existingBefore &&
+      (existingBefore.updatedAt > task.updatedAt ||
+        (existingBefore.updatedAt === task.updatedAt &&
+          existingBefore.status === task.status &&
+          existingBefore.assigneeId === task.assigneeId &&
+          existingBefore.title === task.title &&
+          existingBefore.content === task.content &&
+          existingBefore.archived === task.archived));
     set((s) => {
       const list = s.tasksByFolder[folderId] ?? [];
       const existing = list.find((t) => t.id === task.id);
@@ -853,6 +864,7 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
         myAssignedTasks: myAssigned,
       };
     });
+    if (!staleRemote) maybeNotifyWorkspaceTaskAssigned(existingBefore, task);
   },
 
   removeRemoteWorkspaceTask: (taskId, folderId) => {
