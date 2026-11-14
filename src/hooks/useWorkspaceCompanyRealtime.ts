@@ -20,6 +20,9 @@ export function useWorkspaceCompanyRealtime(enabled: boolean) {
 
     const cleanups = companyIds.map((companyId) =>
       subscribeCompanyWorkspace(companyId, {
+        onFolderUpsert: (folder) => store().applyRemoteWorkspaceFolder(folder),
+        onFolderDelete: (folderId, folderCompanyId) =>
+          store().removeRemoteWorkspaceFolder(folderId, folderCompanyId),
         onTaskUpsert: (task) => store().applyRemoteWorkspaceTask(task),
         onTaskDelete: (taskId, folderId) => store().removeRemoteWorkspaceTask(taskId, folderId),
         onNoteChange: (noteId) => {

@@ -40,6 +40,7 @@ type NotificationState = {
   dismissToast: (toastId: string) => void;
   markRead: (notificationId: string) => void;
   markAllRead: () => void;
+  removeNotification: (notificationId: string) => void;
   clearAll: () => void;
   unreadCount: () => number;
 };
@@ -119,9 +120,18 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     });
   },
 
+  removeNotification: (notificationId) => {
+    set((s) => {
+      const items = s.items.filter((n) => n.id !== notificationId);
+      saveItems(items);
+      const toasts = s.toasts.filter((t) => t.notificationId !== notificationId);
+      return { items, toasts };
+    });
+  },
+
   clearAll: () => {
     saveItems([]);
-    set({ items: [] });
+    set({ items: [], toasts: [] });
   },
 
   unreadCount: () => get().items.filter((n) => !n.read).length,

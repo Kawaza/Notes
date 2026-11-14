@@ -16,7 +16,7 @@ function mapCompany(row: Record<string, unknown>): Company {
   };
 }
 
-function mapFolder(row: Record<string, unknown>): WorkspaceFolder {
+export function mapWorkspaceFolderRow(row: Record<string, unknown>): WorkspaceFolder {
   return {
     id: row.id as string,
     companyId: row.company_id as string,
@@ -299,7 +299,7 @@ export async function fetchWorkspaceFolders(companyId: string): Promise<Workspac
     .eq('company_id', companyId)
     .order('sort_order', { ascending: true });
   if (error) throw error;
-  return (data ?? []).map(mapFolder);
+  return (data ?? []).map(mapWorkspaceFolderRow);
 }
 
 export async function createWorkspaceFolder(
@@ -319,7 +319,7 @@ export async function createWorkspaceFolder(
     .select('*')
     .single();
   if (error) throw error;
-  return mapFolder(data);
+  return mapWorkspaceFolderRow(data);
 }
 
 export async function fetchWorkspaceTasks(folderId: string): Promise<WorkspaceTask[]> {

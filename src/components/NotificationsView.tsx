@@ -1,5 +1,5 @@
 import { formatDistanceToNow } from 'date-fns';
-import { ArrowLeft, Bell, CheckCheck, ClipboardList } from 'lucide-react';
+import { ArrowLeft, Bell, CheckCheck, ClipboardList, Trash2, X } from 'lucide-react';
 import { useNotificationStore, type AppNotification } from '../store/notificationStore';
 import { useStore } from '../store/useStore';
 
@@ -7,6 +7,8 @@ export function NotificationsView() {
   const items = useNotificationStore((s) => s.items);
   const markRead = useNotificationStore((s) => s.markRead);
   const markAllRead = useNotificationStore((s) => s.markAllRead);
+  const removeNotification = useNotificationStore((s) => s.removeNotification);
+  const clearAll = useNotificationStore((s) => s.clearAll);
   const setViewMode = useStore((s) => s.setViewMode);
   const openWorkspaceTask = useStore((s) => s.openWorkspaceTask);
 
@@ -39,15 +41,27 @@ export function NotificationsView() {
             </span>
           )}
         </div>
-        {items.length > 0 && unread > 0 && (
-          <button
-            type="button"
-            onClick={markAllRead}
-            className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted cursor-pointer shrink-0"
-          >
-            <CheckCheck size={14} />
-            Mark all read
-          </button>
+        {items.length > 0 && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            {unread > 0 && (
+              <button
+                type="button"
+                onClick={markAllRead}
+                className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted cursor-pointer"
+              >
+                <CheckCheck size={14} />
+                Mark all read
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={clearAll}
+              className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+            >
+              <Trash2 size={14} />
+              Clear all
+            </button>
+          </div>
         )}
       </header>
 
@@ -58,7 +72,7 @@ export function NotificationsView() {
           <p className="text-xs max-w-xs">When someone assigns you a workspace task, it will show up here.</p>
         </div>
       ) : (
-        <NotificationRows items={items} onOpen={openItem} />
+        <NotificationRows items={items} onOpen={openItem} onDelete={removeNotification} />
       )}
     </div>
   );
@@ -67,21 +81,26 @@ export function NotificationsView() {
 function NotificationRows({
   items,
   onOpen,
+  onDelete,
 }: {
   items: AppNotification[];
   onOpen: (n: AppNotification) => void;
+  onDelete: (id: string) => void;
 }) {
   return (
     <div className="flex-1 overflow-y-auto">
       <ul className="divide-y divide-border">
         {items.map((n) => (
-          <li key={n.id}>
+          <li
+            key={n.id}
+            className={`flex items-stretch ${
+              !n.read ? 'bg-primary/5 border-l-2 border-l-primary' : 'border-l-2 border-l-transparent'
+            }`}
+          >
             <button
               type="button"
               onClick={() => onOpen(n)}
-              className={`w-full flex items-start gap-3 px-4 py-3.5 text-left transition-colors cursor-pointer hover:bg-muted/50 ${
-                !n.read ? 'bg-primary/5 border-l-2 border-l-primary' : 'border-l-2 border-l-transparent'
-              }`}
+              className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3.5 text-left transition-colors cursor-pointer hover:bg-muted/50"
             >
               <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <ClipboardList size={17} />
@@ -97,6 +116,14 @@ function NotificationRows({
                   {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
                 </span>
               </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(n.id)}
+              className="shrink-0 px-3 text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer"
+              aria-label="Delete notification"
+            >
+              <X size={16} />
             </button>
           </li>
         ))}

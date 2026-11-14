@@ -140,6 +140,8 @@ interface CompanyState {
   createWorkspaceNoteInFolder: (folderId: string, title?: string) => string;
   updateWorkspaceNote: (noteId: string, partial: Partial<Note>) => void;
   applyRemoteWorkspaceNote: (note: WorkspaceNote) => void;
+  applyRemoteWorkspaceFolder: (folder: WorkspaceFolder) => void;
+  removeRemoteWorkspaceFolder: (folderId: string, companyId: string) => void;
   applyRemoteWorkspaceTask: (task: WorkspaceTask) => void;
   removeRemoteWorkspaceTask: (taskId: string, folderId: string) => void;
   removeRemoteWorkspaceNote: (noteId: string, folderId: string) => void;
@@ -271,13 +273,13 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
 
   createSharedFolder: async (companyId, name, options) => {
     const folder = await createWorkspaceFolder(companyId, name, options);
-    await get().refreshCompanies();
+    get().applyRemoteWorkspaceFolder(folder);
     return folder;
   },
 
   renameWorkspaceFolder: async (folderId, name) => {
-    await updateWorkspaceFolderRow(folderId, { name: name.trim() });
-    await get().refreshCompanies();
+    const folder = await updateWorkspaceFolderRow(folderId, { name: name.trim() });
+    get().applyRemoteWorkspaceFolder(folder);
   },
 
   deleteWorkspaceFolder: async (folderId) => {
@@ -579,18 +581,8 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
   },
 
   archiveWorkspaceFolder: async (folderId) => {
-    await updateWorkspaceFolderRow(folderId, { archived: true });
-    set((s) => {
-      const foldersByCompany = { ...s.foldersByCompany };
-      for (const [companyId, list] of Object.entries(foldersByCompany)) {
-        if (!list.some((f) => f.id === folderId)) continue;
-        foldersByCompany[companyId] = list.map((f) =>
-          f.id === folderId ? { ...f, archived: true } : f,
-        );
-        break;
-      }
-      return { foldersByCompany };
-    });
+    const folder = await updateWorkspaceFolderRow(folderId, { archived: true });
+    get().applyRemoteWorkspaceFolder(folder);
     void import('./useStore').then((m) => {
       const { selectedFolderId, selectFolder } = m.useStore.getState();
       if (selectedFolderId === workspaceFolderSelectionId(folderId)) {
@@ -600,18 +592,8 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
   },
 
   restoreWorkspaceFolder: async (folderId) => {
-    await updateWorkspaceFolderRow(folderId, { archived: false });
-    set((s) => {
-      const foldersByCompany = { ...s.foldersByCompany };
-      for (const [companyId, list] of Object.entries(foldersByCompany)) {
-        if (!list.some((f) => f.id === folderId)) continue;
-        foldersByCompany[companyId] = list.map((f) =>
-          f.id === folderId ? { ...f, archived: false } : f,
-        );
-        break;
-      }
-      return { foldersByCompany };
-    });
+    const folder = await updateWorkspaceFolderRow(folderId, { archived: false });
+    get().applyRemoteWorkspaceFolder(folder);
     void import('./useStore').then((m) => {
       const { selectedFolderId, selectFolder } = m.useStore.getState();
       if (selectedFolderId === workspaceFolderArchiveSelectionId(folderId)) {
@@ -811,6 +793,59 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
         ix >= 0 ? prev.map((n) => (n.id === note.id ? note : n)) : [...prev, note].sort((a, b) => a.order - b.order);
       return {
         notesByFolder: { ...s.notesByFolder, [folderId]: next },
+      };
+    });
+  },
+
+  applyRemoteWorkspaceFolder: (folder) => {
+    const companyId = folder.companyId;
+    set((s) => {
+      const list = s.foldersByCompany[companyId] ?? [];
+      const existing = list.find((f) => f.id === folder.id);
+      if (existing) {
+        if (existing.updatedAt > folder.updatedAt) return s;
+        if (
+          existing.updatedAt === folder.updatedAt &&
+          existing.name === folder.name &&
+          existing.parentId === folder.parentId &&
+          existing.isParent === folder.isParent &&
+          existing.order === folder.order &&
+          existing.archived === folder.archived &&
+          existing.calendarColor === folder.calendarColor
+        ) {
+          return s;
+        }
+      }
+      const nextList = existing
+        ? list.map((f) => (f.id === folder.id ? folder : f))
+        : [...list, folder].sort((a, b) => a.order - b.order);
+      return {
+        foldersByCompany: { ...s.foldersByCompany, [companyId]: nextList },
+      };
+    });
+  },
+
+  removeRemoteWorkspaceFolder: (folderId, companyId) => {
+    set((s) => {
+      const list = s.foldersByCompany[companyId] ?? [];
+      if (!list.some((f) => f.id === folderId)) return s;
+      const notesByFolder = { ...s.notesByFolder };
+      const linksByFolder = { ...s.linksByFolder };
+      const secretsByFolder = { ...s.secretsByFolder };
+      const tasksByFolder = { ...s.tasksByFolder };
+      delete notesByFolder[folderId];
+      delete linksByFolder[folderId];
+      delete secretsByFolder[folderId];
+      delete tasksByFolder[folderId];
+      return {
+        foldersByCompany: {
+          ...s.foldersByCompany,
+          [companyId]: list.filter((f) => f.id !== folderId),
+        },
+        notesByFolder,
+        linksByFolder,
+        secretsByFolder,
+        tasksByFolder,
       };
     });
   },
