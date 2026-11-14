@@ -313,12 +313,7 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
       }));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not load folder';
-      set((s) => ({
-        error: message,
-        notesByFolder: { ...s.notesByFolder, [folderId]: s.notesByFolder[folderId] ?? [] },
-        linksByFolder: { ...s.linksByFolder, [folderId]: s.linksByFolder[folderId] ?? [] },
-        secretsByFolder: { ...s.secretsByFolder, [folderId]: s.secretsByFolder[folderId] ?? [] },
-      }));
+      set({ error: message });
     } finally {
       inFlightFolderLoads.delete(folderId);
     }
@@ -632,17 +627,35 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
         break;
       }
     }
-    await deleteWorkspaceTaskRow(taskId);
-    if (folderId) {
-      set((s) => ({
-        tasksByFolder: {
-          ...s.tasksByFolder,
-          [folderId!]: (s.tasksByFolder[folderId!] ?? []).filter((t) => t.id !== taskId),
-        },
-        myAssignedTasks: s.myAssignedTasks.filter((t) => t.id !== taskId),
-      }));
-    } else {
-      set((s) => ({ myAssignedTasks: s.myAssignedTasks.filter((t) => t.id !== taskId) }));
+    if (!folderId) {
+      const hit = get().myAssignedTasks.find((t) => t.id === taskId);
+      if (hit) folderId = hit.folderId;
+    }
+
+    const removeLocal = () => {
+      set((s) => {
+        const tasksByFolder = { ...s.tasksByFolder };
+        if (folderId) {
+          tasksByFolder[folderId] = (tasksByFolder[folderId] ?? []).filter((t) => t.id !== taskId);
+        }
+        for (const [fid, list] of Object.entries(tasksByFolder)) {
+          if (list.some((t) => t.id === taskId)) {
+            tasksByFolder[fid] = list.filter((t) => t.id !== taskId);
+          }
+        }
+        return {
+          tasksByFolder,
+          myAssignedTasks: s.myAssignedTasks.filter((t) => t.id !== taskId),
+        };
+      });
+    };
+
+    removeLocal();
+    try {
+      await deleteWorkspaceTaskRow(taskId);
+    } catch (err) {
+      console.error(err);
+      if (folderId) void get().loadTasksForFolder(folderId);
     }
   },
 
@@ -843,22 +856,38 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
   },
 
   removeRemoteWorkspaceTask: (taskId, folderId) => {
-    set((s) => ({
-      tasksByFolder: {
-        ...s.tasksByFolder,
-        [folderId]: (s.tasksByFolder[folderId] ?? []).filter((t) => t.id !== taskId),
-      },
-      myAssignedTasks: s.myAssignedTasks.filter((t) => t.id !== taskId),
-    }));
+    set((s) => {
+      const tasksByFolder = { ...s.tasksByFolder };
+      let removed = false;
+      const targets = folderId ? [folderId, ...Object.keys(tasksByFolder)] : Object.keys(tasksByFolder);
+      for (const fid of targets) {
+        const list = tasksByFolder[fid];
+        if (!list?.some((t) => t.id === taskId)) continue;
+        tasksByFolder[fid] = list.filter((t) => t.id !== taskId);
+        removed = true;
+      }
+      if (!removed) return s;
+      return {
+        tasksByFolder,
+        myAssignedTasks: s.myAssignedTasks.filter((t) => t.id !== taskId),
+      };
+    });
   },
 
   removeRemoteWorkspaceNote: (noteId, folderId) => {
-    set((s) => ({
-      notesByFolder: {
-        ...s.notesByFolder,
-        [folderId]: (s.notesByFolder[folderId] ?? []).filter((n) => n.id !== noteId),
-      },
-    }));
+    set((s) => {
+      const notesByFolder = { ...s.notesByFolder };
+      const targets = folderId ? [folderId, ...Object.keys(notesByFolder)] : Object.keys(notesByFolder);
+      let removed = false;
+      for (const fid of targets) {
+        const list = notesByFolder[fid];
+        if (!list?.some((n) => n.id === noteId)) continue;
+        notesByFolder[fid] = list.filter((n) => n.id !== noteId);
+        removed = true;
+      }
+      if (!removed) return s;
+      return { notesByFolder };
+    });
   },
 
   setWorkspaceNoteConflict: (noteId, server) => {

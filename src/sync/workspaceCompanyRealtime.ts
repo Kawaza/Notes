@@ -30,7 +30,7 @@ export function subscribeCompanyWorkspace(
       (payload) => {
         if (payload.eventType === 'DELETE') {
           const old = payload.old as { id?: string; folder_id?: string };
-          if (old.id && old.folder_id) handlers.onTaskDelete(old.id, old.folder_id);
+          if (old.id) handlers.onTaskDelete(old.id, old.folder_id ?? '');
           return;
         }
         const row = payload.new as Record<string, unknown>;
@@ -48,7 +48,7 @@ export function subscribeCompanyWorkspace(
       (payload) => {
         if (payload.eventType === 'DELETE') {
           const old = payload.old as { id?: string; folder_id?: string };
-          if (old.id && old.folder_id) handlers.onNoteDelete(old.id, old.folder_id);
+          if (old.id) handlers.onNoteDelete(old.id, old.folder_id ?? '');
           return;
         }
         const row = payload.new as { id?: string; is_task?: boolean };
