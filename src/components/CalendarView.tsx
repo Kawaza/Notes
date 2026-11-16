@@ -9,6 +9,9 @@ import type { EventResizeDoneArg } from '@fullcalendar/interaction';
 import { Trash2, Archive } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useCompanyStore } from '../store/companyStore';
+import { parseWorkspaceTaskSelectionId, isWorkspaceTaskSelectionId } from '../types/company';
+import { useMyTasksList } from '../hooks/useMyTasksList';
+import { dueDateToAllDayStart, isDueDateOverdue } from '../utils/dueDate';
 import { defaultCalendarColorForPalette } from '../utils/defaultCalendarColor';
 import { resolveCalendarEventStyle } from '../utils/themeCalendarColor';
 import { resolveActiveLinkedTaskNote, resolveLinkedTaskTitle } from '../utils/linkedTaskResolve';
@@ -32,6 +35,8 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const deleteNote = useStore((s) => s.deleteNote);
   const selectNote = useStore((s) => s.selectNote);
   const setViewMode = useStore((s) => s.setViewMode);
+  const openWorkspaceTask = useStore((s) => s.openWorkspaceTask);
+  const myTasks = useMyTasksList();
 
   const calendarRef = useRef<FullCalendar>(null);
   const calendarContainerRef = useRef<HTMLDivElement>(null);
@@ -63,7 +68,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
     return () => clearInterval(id);
   }, []);
 
-  const events = useMemo(() => {
+  const timeBlockEvents = useMemo(() => {
     return notes
       .filter((n) => {
         if (!n.isCalendarBlock || !n.scheduledAt) return false;
@@ -107,8 +112,87 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
       });
   }, [notes, folders, tasksByFolder, myAssignedTasks, foldersByCompany, isDark, colorPalette]);
 
+  const dueTaskEvents = useMemo(() => {
+    const overdueStyle = isDark
+      ? {
+          backgroundColor: 'rgba(248, 113, 113, 0.22)',
+          borderColor: 'rgba(248, 113, 113, 0.55)',
+          textColor: '#fecaca',
+        }
+      : {
+          backgroundColor: 'rgba(254, 202, 202, 0.85)',
+          borderColor: 'rgba(239, 68, 68, 0.55)',
+          textColor: '#7f1d1d',
+        };
+    const dueStyle = isDark
+      ? {
+          backgroundColor: 'rgba(251, 191, 36, 0.2)',
+          borderColor: 'rgba(251, 191, 36, 0.5)',
+          textColor: '#fde68a',
+        }
+      : {
+          backgroundColor: 'rgba(253, 230, 138, 0.9)',
+          borderColor: 'rgba(217, 119, 6, 0.45)',
+          textColor: '#78350f',
+        };
+
+    return myTasks
+      .filter((note) => {
+        const due = note.workspaceTaskMeta?.dueAt ?? note.personalTaskMeta?.dueAt;
+        if (!due) return false;
+        const status = note.workspaceTaskMeta?.status ?? note.personalTaskMeta?.status;
+        if (status === 'complete') return false;
+        return true;
+      })
+      .map((note) => {
+        const due = (note.workspaceTaskMeta?.dueAt ?? note.personalTaskMeta?.dueAt)!;
+        const title = note.title?.trim() || 'Untitled task';
+        const isWs = Boolean(note.workspaceTaskMeta);
+        const rawTaskId =
+          isWs && isWorkspaceTaskSelectionId(note.id)
+            ? (parseWorkspaceTaskSelectionId(note.id)?.taskId ?? note.id)
+            : note.id;
+        const id = isWs ? `due-ws-${rawTaskId}` : `due-p-${note.id}`;
+        const palette = isDueDateOverdue(due) ? overdueStyle : dueStyle;
+        return {
+          id,
+          title: `Due: ${title}`,
+          start: dueDateToAllDayStart(due),
+          allDay: true,
+          editable: false,
+          durationEditable: false,
+          ...palette,
+          extendedProps: { kind: 'due-task' as const },
+        };
+      });
+  }, [myTasks, isDark]);
+
+  const events = useMemo(
+    () => [...dueTaskEvents, ...timeBlockEvents],
+    [dueTaskEvents, timeBlockEvents],
+  );
+
+  const isDueTaskEventId = (id: string) => id.startsWith('due-ws-') || id.startsWith('due-p-');
+
   const handleEventClick = (info: EventClickArg) => {
-    setPanelNoteId(info.event.id);
+    const id = info.event.id;
+    if (id.startsWith('due-ws-')) {
+      const taskId = id.slice('due-ws-'.length);
+      const hit =
+        myAssignedTasks.find((t) => t.id === taskId) ??
+        Object.values(tasksByFolder)
+          .flat()
+          .find((t) => t.id === taskId);
+      if (hit) openWorkspaceTask(hit.id, hit.folderId);
+      return;
+    }
+    if (id.startsWith('due-p-')) {
+      const noteId = id.slice('due-p-'.length);
+      selectNote(noteId);
+      setViewMode('notes');
+      return;
+    }
+    setPanelNoteId(id);
   };
 
   const handleDateSelect = (info: DateSelectArg) => {
@@ -129,6 +213,10 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   };
 
   const handleEventDrop = (info: EventDropArg) => {
+    if (isDueTaskEventId(info.event.id)) {
+      info.revert();
+      return;
+    }
     updateNote(info.event.id, {
       scheduledAt: info.event.start?.toISOString(),
       scheduledEnd: info.event.end?.toISOString(),
@@ -137,6 +225,10 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   };
 
   const handleEventResize = (info: EventResizeDoneArg) => {
+    if (isDueTaskEventId(info.event.id)) {
+      info.revert();
+      return;
+    }
     updateNote(info.event.id, {
       scheduledAt: info.event.start?.toISOString(),
       scheduledEnd: info.event.end?.toISOString(),
@@ -196,7 +288,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             <div className="min-w-0">
               <h2 className="text-lg font-medium">Calendar</h2>
               <p className="text-sm text-muted-foreground font-normal hidden sm:block">
-                Drag to book time · Link blocks to tasks · Right-click: remove from calendar (keeps task) or delete
+                Due tasks show at the top of each day · Drag blocks to book time · Right-click blocks for options
               </p>
             </div>
           </div>
@@ -229,7 +321,8 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             nowIndicator={false}
             slotMinTime="06:00:00"
             slotMaxTime="22:00:00"
-            allDaySlot={false}
+            allDaySlot
+            eventOrder="start,-title"
             height="100%"
             slotLaneClassNames={slotLaneClassNames}
             eventClick={handleEventClick}
@@ -237,10 +330,15 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             eventResize={handleEventResize}
             eventDragStop={(info) => applyEventColors(info.event.id)}
             eventDurationEditable
+            eventClassNames={(arg) =>
+              arg.event.id && isDueTaskEventId(arg.event.id) ? ['fc-event-due-task'] : []
+            }
             eventDidMount={(info) => {
-              info.el.dataset.noteId = info.event.id;
-              info.el.title = 'Click to edit · Right-click for options';
+              const dueTask = isDueTaskEventId(info.event.id);
+              if (!dueTask) info.el.dataset.noteId = info.event.id;
+              info.el.title = dueTask ? 'Click to open task' : 'Click to edit · Right-click for options';
               info.el.addEventListener('dblclick', (e) => {
+                if (dueTask) return;
                 e.stopPropagation();
                 const block = notes.find((n) => n.id === info.event.id);
                 if (!block) return;
@@ -260,6 +358,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
                 updateNote(info.event.id, { title: newTitle.trim() });
               });
               info.el.addEventListener('contextmenu', (e) => {
+                if (dueTask) return;
                 e.preventDefault();
                 e.stopPropagation();
                 setEventMenu({

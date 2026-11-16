@@ -1,5 +1,5 @@
-import { format } from 'date-fns';
 import type { CompanyMember } from '../types/company';
+import { DueDatePicker } from './DueDatePicker';
 import {
   WORKSPACE_TASK_STATUSES,
   WORKSPACE_TASK_STATUS_LABELS,
@@ -35,7 +35,6 @@ export function WorkspaceTaskPanel({
   compact,
 }: WorkspaceTaskPanelProps) {
   const pad = compact ? 'px-4' : 'px-8';
-  const dueValue = dueAt ? format(new Date(dueAt), "yyyy-MM-dd'T'HH:mm") : '';
 
   return (
     <div className={`${pad} py-3 border-b border-border/50 bg-muted/20 space-y-3`}>
@@ -71,19 +70,12 @@ export function WorkspaceTaskPanel({
           </select>
         </label>
 
-        <label className="block text-xs">
-          <span className="text-muted-foreground font-medium">Deadline</span>
-          <input
-            type="datetime-local"
-            value={dueValue}
-            onChange={(e) =>
-              onChange({
-                dueAt: e.target.value ? new Date(e.target.value).toISOString() : null,
-              })
-            }
-            className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
+        <div className="block text-xs">
+          <span className="text-muted-foreground font-medium">Due date</span>
+          <div className="mt-1">
+            <DueDatePicker dueAt={dueAt} onChange={(iso) => onChange({ dueAt: iso })} />
+          </div>
+        </div>
       </div>
       {assigneeId && (
         <p className="text-xs text-muted-foreground">

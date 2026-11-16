@@ -409,6 +409,15 @@ body {
   background: color-mix(in srgb, var(--color-primary) 22%, transparent);
 }
 
+.prose-editor .workspace-member-mention {
+  display: inline;
+  color: var(--color-primary);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+
 .markdown-preview ul:not(:has(input[type="checkbox"])) {
   list-style-type: disc;
   list-style-position: outside;
@@ -527,6 +536,11 @@ body {
 .calendar-container .fc .fc-event .fc-event-time {
   font-size: 11px;
   opacity: 0.85;
+}
+
+.calendar-container .fc .fc-event.fc-event-due-task {
+  font-weight: 600;
+  font-size: 0.75rem;
 }
 
 .calendar-container .fc .fc-daygrid-event {

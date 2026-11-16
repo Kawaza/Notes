@@ -64,7 +64,10 @@ import {
 } from '../utils/mobileEditorScroll';
 import { editorHtmlEquivalent } from '../utils/editorHtml';
 import { WorkspaceTaskMention } from './WorkspaceTaskMentionExtension';
+import { WorkspaceMemberMention } from './WorkspaceMemberMentionExtension';
 import { NoteComment } from './NoteCommentExtension';
+import type { MemberMentionSuggestion } from '../types/memberMention';
+import { resolveMentionedUserIdsFromText } from '../utils/workspaceContentNotifications';
 import { clearEditorDropcursor } from '../utils/editorBlockDrag';
 const lowlight = createLowlight(common);
 if (lowlight.registered('xml')) {
@@ -418,6 +421,7 @@ interface RichTextEditorProps {
   attachments?: NoteAttachment[];
   taskLinkSuggestions?: TaskLinkSuggestion[];
   onOpenTaskLink?: (taskId: string, folderId: string, kind: 'workspace' | 'personal') => void;
+  memberMentionSuggestions?: MemberMentionSuggestion[];
 }
 
 export function RichTextEditor({
@@ -432,6 +436,7 @@ export function RichTextEditor({
   attachments = [],
   taskLinkSuggestions = [],
   onOpenTaskLink,
+  memberMentionSuggestions = [],
 }: RichTextEditorProps) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
@@ -454,6 +459,12 @@ export function RichTextEditor({
   const dragBlockTypeRef = useRef<string | null>(null);
   const gutterHoverRef = useRef<{ pos: number; type: string } | null>(null);
   const [taskMention, setTaskMention] = useState<{
+    query: string;
+    from: number;
+    top: number;
+    left: number;
+  } | null>(null);
+  const [memberMention, setMemberMention] = useState<{
     query: string;
     from: number;
     top: number;
@@ -491,6 +502,8 @@ export function RichTextEditor({
   taskLinkSuggestionsRef.current = taskLinkSuggestions;
   const onOpenTaskLinkRef = useRef(onOpenTaskLink);
   onOpenTaskLinkRef.current = onOpenTaskLink;
+  const memberMentionSuggestionsRef = useRef(memberMentionSuggestions);
+  memberMentionSuggestionsRef.current = memberMentionSuggestions;
 
   const editorHtml = useMemo(() => {
     const base = hydrateNoteHtmlContent(content, attachments);
@@ -544,6 +557,7 @@ export function RichTextEditor({
         },
       }),
       WorkspaceTaskMention,
+      WorkspaceMemberMention,
       NoteComment,
       EditorWideDropcursor,
     ],
@@ -591,6 +605,61 @@ export function RichTextEditor({
       left: coords.left,
     });
   }, []);
+
+  const refreshMemberMentionMenu = useCallback((ed: Editor) => {
+    if (memberMentionSuggestionsRef.current.length === 0) {
+      setMemberMention(null);
+      return;
+    }
+    const { from } = ed.state.selection;
+    const lookback = 64;
+    const start = Math.max(0, from - lookback);
+    const textBefore = ed.state.doc.textBetween(start, from, '\n', '\0');
+    let at = -1;
+    for (let i = textBefore.length - 1; i >= 0; i--) {
+      if (textBefore[i] !== '@') continue;
+      const prev = i === 0 ? ' ' : textBefore[i - 1]!;
+      if (/\s|[([{]/.test(prev)) {
+        at = i;
+        break;
+      }
+    }
+    if (at === -1) {
+      setMemberMention(null);
+      return;
+    }
+    const query = textBefore.slice(at + 1);
+    if (/\s/.test(query)) {
+      setMemberMention(null);
+      return;
+    }
+    const coords = ed.view.coordsAtPos(from);
+    setMemberMention({
+      query: query.toLowerCase(),
+      from: start + at,
+      top: coords.bottom + 6,
+      left: coords.left,
+    });
+  }, []);
+
+  const insertMemberMention = useCallback(
+    (member: MemberMentionSuggestion) => {
+      const ed = editorRef.current;
+      if (!ed || !memberMention) return;
+      ed
+        .chain()
+        .focus()
+        .deleteRange({ from: memberMention.from, to: ed.state.selection.from })
+        .insertContent({
+          type: 'workspaceMemberMention',
+          attrs: { userId: member.userId, memberLabel: member.label },
+        })
+        .insertContent(' ')
+        .run();
+      setMemberMention(null);
+    },
+    [memberMention],
+  );
 
   const insertTaskLinkMention = useCallback(
     (task: TaskLinkSuggestion) => {
@@ -794,10 +863,12 @@ export function RichTextEditor({
     },
     onSelectionUpdate: ({ editor: ed }) => {
       refreshTaskMentionMenu(ed);
+      refreshMemberMentionMenu(ed);
       refreshInsertMenu(ed);
     },
     onUpdate: ({ editor: ed }) => {
       refreshTaskMentionMenu(ed);
+      refreshMemberMentionMenu(ed);
       refreshInsertMenu(ed);
       const html = ed.getHTML();
       lastEmittedHtmlRef.current = html;
@@ -815,6 +886,14 @@ export function RichTextEditor({
       .filter((t) => !q || t.title.toLowerCase().includes(q))
       .slice(0, 8);
   }, [taskMention, taskLinkSuggestions]);
+
+  const memberMentionOptions = useMemo(() => {
+    if (!memberMention) return [];
+    const q = memberMention.query;
+    return memberMentionSuggestions
+      .filter((m) => !q || m.label.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [memberMention, memberMentionSuggestions]);
 
   useEffect(() => {
     if (editor) onEditorReady?.(editor);
@@ -1034,11 +1113,18 @@ export function RichTextEditor({
     if (!editor) return;
     const profile = useAuthStore.getState().profile;
     const authorName = profile ? profileFullName(profile) : 'You';
+    const authorUserId = useAuthStore.getState().user?.id ?? null;
+    const mentioned = resolveMentionedUserIdsFromText(text, memberMentionSuggestions);
     editor
       .chain()
       .focus()
       .extendMarkRange('noteComment')
-      .setMark('noteComment', { comment: text, authorName })
+      .setMark('noteComment', {
+        comment: text,
+        authorName,
+        authorUserId,
+        mentionedUserIds: mentioned.length > 0 ? mentioned.join(',') : null,
+      })
       .run();
   };
 
@@ -1247,6 +1333,31 @@ export function RichTextEditor({
                     className="w-full px-3 py-2 text-left text-sm hover:bg-muted cursor-pointer truncate"
                   >
                     {task.title || 'Untitled task'}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+
+          {memberMention && (
+            <div
+              className="fixed z-50 min-w-[200px] max-w-sm py-1 rounded-lg border border-border bg-background shadow-lg"
+              style={{ top: memberMention.top, left: memberMention.left }}
+            >
+              {memberMentionOptions.length === 0 ? (
+                <p className="px-3 py-2 text-xs text-muted-foreground">No matching members</p>
+              ) : (
+                memberMentionOptions.map((member) => (
+                  <button
+                    key={member.userId}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      insertMemberMention(member);
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted cursor-pointer truncate"
+                  >
+                    @{member.label}
                   </button>
                 ))
               )}

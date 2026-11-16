@@ -42,6 +42,7 @@ import {
   parseWorkspaceNoteSelectionId,
   parseWorkspaceTaskSelectionId,
   workspaceFolderSelectionId,
+  workspaceNoteSelectionId,
   workspaceTaskSelectionId,
 } from '../types/company';
 import { workspaceNoteToNote } from '../utils/workspaceMappers';
@@ -84,7 +85,8 @@ interface Store extends AppData {
   rehydrate: (userId: string | null) => Promise<void>;
   startCloudSync: (userId: string) => void;
   stopCloudSync: () => void;
-  pullRemoteSync: (userId?: string) => Promise<void>;
+  pullRemoteSync: (userId?: string, options?: { force?: boolean }) => Promise<void>;
+  openWorkspaceNote: (noteId: string, folderId: string) => void;
   persist: () => Promise<void>;
   persistLocal: () => Promise<void>;
   flushPersist: () => Promise<void>;
@@ -459,11 +461,11 @@ export const useStore = create<Store>((set, get) => ({
     await get().hydrate(userId, generation);
   },
 
-  pullRemoteSync: async (userId = useAuthStore.getState().user?.id ?? undefined) => {
+  pullRemoteSync: async (userId = useAuthStore.getState().user?.id ?? undefined, options) => {
     if (!userId || !isSyncAvailable() || !get().hydrated) return;
 
     const now = Date.now();
-    if (now - lastPullRemoteAt < PULL_REMOTE_MIN_MS) return;
+    if (!options?.force && now - lastPullRemoteAt < PULL_REMOTE_MIN_MS) return;
     lastPullRemoteAt = now;
 
     try {
@@ -525,7 +527,7 @@ export const useStore = create<Store>((set, get) => ({
     get().stopCloudSync();
     unsubscribeCloud = subscribeCloudChanges(userId, () => {
       if (Math.abs(Date.now() - lastCloudPushAt) < 500) return;
-      void get().pullRemoteSync(userId);
+      void get().pullRemoteSync(userId, { force: true });
     });
 
     void get().pullRemoteSync(userId);
@@ -957,6 +959,18 @@ export const useStore = create<Store>((set, get) => ({
     scheduleSave(get);
   },
 
+  openWorkspaceNote: (noteId, folderId) => {
+    set({
+      selectedFolderId: workspaceFolderSelectionId(folderId),
+      selectedNoteId: workspaceNoteSelectionId(noteId),
+      workspaceListTab: 'notes',
+      viewMode: 'notes',
+      mobileNavOpen: false,
+    });
+    void useCompanyStore.getState().loadFolderContent(folderId);
+    scheduleSave(get);
+  },
+
   openTaskFromMyTasks: (note) => {
     const rawTask = parseWorkspaceTaskSelectionId(note.id);
     if (rawTask && note.workspaceTaskMeta) {
@@ -1058,6 +1072,7 @@ export const useStore = create<Store>((set, get) => ({
     });
     set((s) => ({ folders: [...s.folders, folder] }));
     scheduleSave(get);
+    void get().persist();
     return folder.id;
   },
 

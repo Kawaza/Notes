@@ -38,6 +38,7 @@ import { OverflowMenu } from './OverflowMenu';
 import { MobileNavButton } from './MobileNavButton';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { openExternalUrl } from '../utils/openExternal';
+import { isDueDateOverdue } from '../utils/dueDate';
 import { useMyTasksList } from '../hooks/useMyTasksList';
 import { useWorkspaceFolderRealtime } from '../hooks/useWorkspaceFolderRealtime';
 import { findWorkspaceFolder } from '../utils/workspaceFolderTree';
@@ -141,8 +142,8 @@ function NoteListItemContent({
   const canArchive =
     !workspaceArchiveView && (isWorkspaceItem || Boolean(folder && !isFolderArchived(folder)));
   const canRestoreWorkspace = workspaceArchiveView && isWorkspaceItem;
-  const dueRaw = taskMeta?.dueAt ?? note.scheduledAt;
-  const dueOverdue = Boolean(dueRaw && new Date(dueRaw).getTime() < Date.now());
+  const dueRaw = taskMeta?.dueAt ?? personalMeta?.dueAt ?? note.scheduledAt;
+  const dueOverdue = Boolean(dueRaw && isDueDateOverdue(dueRaw));
 
   useEffect(() => {
     if (!editing) setEditTitle(note.title);
@@ -296,7 +297,7 @@ function NoteListItemContent({
                   · Due{' '}
                   {format(
                     new Date(taskMeta?.dueAt ?? personalMeta?.dueAt ?? note.scheduledAt!),
-                    'MMM d, h:mm a',
+                    'MMM d, yyyy',
                   )}
                 </span>
               )}

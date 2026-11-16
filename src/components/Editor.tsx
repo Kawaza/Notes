@@ -49,6 +49,8 @@ import {
   removeEmbeddedImageFromHtml,
 } from '../utils/noteImages';
 import { membersWithCurrentUser } from '../utils/companyMembers';
+import { memberDisplayName } from '../utils/memberDisplayName';
+import type { MemberMentionSuggestion } from '../types/memberMention';
 
 interface EditorProps {
   noteId?: string;
@@ -273,6 +275,20 @@ export function Editor({
         : [],
     [workspaceCompanyId, membersByCompany, currentUserId, currentUserProfile],
   );
+
+  const memberMentionSuggestions = useMemo((): MemberMentionSuggestion[] => {
+    if (!workspaceCompanyId) return [];
+    return workspaceMembers.map((m) => {
+      const label = memberDisplayName(
+        m.userId,
+        profilesByUserId,
+        workspaceMembers,
+        currentUserId,
+        currentUserProfile,
+      ).replace(/ \(you\)$/i, '');
+      return { userId: m.userId, label: label || `Member ${m.userId.slice(0, 8)}` };
+    });
+  }, [workspaceCompanyId, workspaceMembers, profilesByUserId, currentUserId, currentUserProfile]);
 
   const folder = note
     ? isWorkspaceNoteSelectionId(note.id) && wsFolderRaw
@@ -749,6 +765,7 @@ export function Editor({
             }
             taskLinkSuggestions={taskLinkSuggestions}
             onOpenTaskLink={openTaskLink}
+            memberMentionSuggestions={memberMentionSuggestions}
           />
         )}
         {!compact && note.attachments.length > 0 && (

@@ -69,7 +69,7 @@ export function SyncAccountSection() {
     setPulling(true);
     setUploadMessage(null);
     try {
-      await pullRemoteSync();
+      await pullRemoteSync(undefined, { force: true });
       setUploadMessage('Synced latest notes from the cloud.');
     } catch (err) {
       setUploadMessage(err instanceof Error ? err.message : 'Sync failed');

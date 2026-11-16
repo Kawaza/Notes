@@ -60,6 +60,10 @@ import {
   setWorkspaceNoteServerRevision,
 } from '../sync/workspaceNotePersistence';
 import { maybeNotifyWorkspaceTaskAssigned } from '../utils/workspaceTaskNotifications';
+import {
+  maybeNotifyWorkspaceNoteContent,
+  maybeNotifyWorkspaceTaskContent,
+} from '../utils/workspaceContentNotifications';
 
 function companyIdForFolder(
   foldersByCompany: Record<string, WorkspaceFolder[]>,
@@ -798,6 +802,7 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
         notesByFolder: { ...s.notesByFolder, [folderId]: next },
       };
     });
+    maybeNotifyWorkspaceNoteContent(existing, note);
   },
 
   applyRemoteCompany: (company) => {
@@ -968,7 +973,10 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
         myAssignedTasks: myAssigned,
       };
     });
-    if (!staleRemote) maybeNotifyWorkspaceTaskAssigned(existingBefore, task);
+    if (!staleRemote) {
+      maybeNotifyWorkspaceTaskAssigned(existingBefore, task);
+      maybeNotifyWorkspaceTaskContent(existingBefore, task);
+    }
   },
 
   removeRemoteWorkspaceTask: (taskId, folderId) => {

@@ -25,6 +25,22 @@ export const NoteComment = Mark.create({
           return { 'data-comment-author': attrs.authorName };
         },
       },
+      authorUserId: {
+        default: null,
+        parseHTML: (el) => el.getAttribute('data-comment-author-user-id'),
+        renderHTML: (attrs) => {
+          if (!attrs.authorUserId) return {};
+          return { 'data-comment-author-user-id': attrs.authorUserId };
+        },
+      },
+      mentionedUserIds: {
+        default: null,
+        parseHTML: (el) => el.getAttribute('data-mentioned-user-ids'),
+        renderHTML: (attrs) => {
+          if (!attrs.mentionedUserIds) return {};
+          return { 'data-mentioned-user-ids': attrs.mentionedUserIds };
+        },
+      },
     };
   },
 

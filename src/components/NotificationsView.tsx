@@ -1,7 +1,24 @@
 import { formatDistanceToNow } from 'date-fns';
-import { ArrowLeft, Bell, CheckCheck, ClipboardList, Trash2, X } from 'lucide-react';
+import { ArrowLeft, AtSign, Bell, CheckCheck, ClipboardList, MessageSquare, Trash2, X } from 'lucide-react';
 import { useNotificationStore, type AppNotification } from '../store/notificationStore';
 import { useStore } from '../store/useStore';
+
+function notificationTitle(n: AppNotification): string {
+  if (n.type === 'task_assigned') return n.taskTitle.trim() || 'Task';
+  return n.postTitle.trim() || (n.contentKind === 'task' ? 'Task' : 'Post');
+}
+
+function notificationSubtitle(n: AppNotification): string {
+  if (n.type === 'task_assigned') return `${n.fromLabel} assigned you this task`;
+  if (n.type === 'workspace_mention') return `${n.fromLabel} mentioned you`;
+  return `${n.fromLabel} added a comment`;
+}
+
+function notificationIcon(n: AppNotification) {
+  if (n.type === 'task_assigned') return ClipboardList;
+  if (n.type === 'workspace_comment') return MessageSquare;
+  return AtSign;
+}
 
 export function NotificationsView() {
   const items = useNotificationStore((s) => s.items);
@@ -11,6 +28,7 @@ export function NotificationsView() {
   const clearAll = useNotificationStore((s) => s.clearAll);
   const setViewMode = useStore((s) => s.setViewMode);
   const openWorkspaceTask = useStore((s) => s.openWorkspaceTask);
+  const openWorkspaceNote = useStore((s) => s.openWorkspaceNote);
 
   const unread = items.filter((n) => !n.read).length;
 
@@ -18,6 +36,12 @@ export function NotificationsView() {
     markRead(n.id);
     if (n.type === 'task_assigned') {
       openWorkspaceTask(n.taskId, n.folderId);
+      return;
+    }
+    if (n.contentKind === 'task') {
+      openWorkspaceTask(n.itemId, n.folderId);
+    } else {
+      openWorkspaceNote(n.itemId, n.folderId);
     }
   };
 
@@ -69,7 +93,9 @@ export function NotificationsView() {
         <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
           <Bell size={32} className="opacity-40" />
           <p className="text-sm">No notifications yet.</p>
-          <p className="text-xs max-w-xs">When someone assigns you a workspace task, it will show up here.</p>
+          <p className="text-xs max-w-xs">
+            Task assignments, @ mentions, and comments on workspace posts show up here.
+          </p>
         </div>
       ) : (
         <NotificationRows items={items} onOpen={openItem} onDelete={removeNotification} />
@@ -90,43 +116,46 @@ function NotificationRows({
   return (
     <div className="flex-1 overflow-y-auto">
       <ul className="divide-y divide-border">
-        {items.map((n) => (
-          <li
-            key={n.id}
-            className={`flex items-stretch ${
-              !n.read ? 'bg-primary/5 border-l-2 border-l-primary' : 'border-l-2 border-l-transparent'
-            }`}
-          >
-            <button
-              type="button"
-              onClick={() => onOpen(n)}
-              className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3.5 text-left transition-colors cursor-pointer hover:bg-muted/50"
+        {items.map((n) => {
+          const Icon = notificationIcon(n);
+          return (
+            <li
+              key={n.id}
+              className={`flex items-stretch ${
+                !n.read ? 'bg-primary/5 border-l-2 border-l-primary' : 'border-l-2 border-l-transparent'
+              }`}
             >
-              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <ClipboardList size={17} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className={`block text-sm ${!n.read ? 'font-semibold' : 'font-medium'}`}>
-                  {n.taskTitle.trim() || 'Task'}
+              <button
+                type="button"
+                onClick={() => onOpen(n)}
+                className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3.5 text-left transition-colors cursor-pointer hover:bg-muted/50"
+              >
+                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Icon size={17} />
                 </span>
-                <span className="block text-xs text-muted-foreground mt-0.5">
-                  {n.fromLabel} assigned you this task
+                <span className="min-w-0 flex-1">
+                  <span className={`block text-sm ${!n.read ? 'font-semibold' : 'font-medium'}`}>
+                    {notificationTitle(n)}
+                  </span>
+                  <span className="block text-xs text-muted-foreground mt-0.5">
+                    {notificationSubtitle(n)}
+                  </span>
+                  <span className="block text-[11px] text-muted-foreground/80 mt-1">
+                    {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
+                  </span>
                 </span>
-                <span className="block text-[11px] text-muted-foreground/80 mt-1">
-                  {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
-                </span>
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onDelete(n.id)}
-              className="shrink-0 px-3 text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer"
-              aria-label="Delete notification"
-            >
-              <X size={16} />
-            </button>
-          </li>
-        ))}
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete(n.id)}
+                className="shrink-0 px-3 text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer"
+                aria-label="Delete notification"
+              >
+                <X size={16} />
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

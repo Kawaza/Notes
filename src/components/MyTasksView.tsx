@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import {
-  format,
-  isThisWeek,
-  isToday,
-} from 'date-fns';
+import { isThisWeek, isToday, startOfDay, isBefore } from 'date-fns';
+import { formatDueDateLabel } from '../utils/dueDate';
 import { Search } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useCompanyStore } from '../store/companyStore';
@@ -38,24 +35,26 @@ const BUCKET_HEADER_CLASS: Record<DueBucket, string> = {
 };
 
 function isTaskComplete(note: Note): boolean {
-  return note.workspaceTaskMeta?.status === 'complete';
+  return (
+    note.workspaceTaskMeta?.status === 'complete' || note.personalTaskMeta?.status === 'complete'
+  );
 }
 
 function taskDueAt(note: Note): string | undefined {
-  return note.workspaceTaskMeta?.dueAt ?? note.scheduledAt;
+  return note.workspaceTaskMeta?.dueAt ?? note.personalTaskMeta?.dueAt ?? note.scheduledAt;
 }
 
-function isTaskOverdue(note: Note, now = Date.now()): boolean {
+function isTaskOverdue(note: Note, now = new Date()): boolean {
   const due = taskDueAt(note);
   if (!due) return false;
-  return new Date(due).getTime() < now;
+  return isBefore(startOfDay(new Date(due)), startOfDay(now));
 }
 
 function dueBucket(note: Note, now: Date): DueBucket {
   const dueRaw = taskDueAt(note);
   if (!dueRaw) return 'none';
   const due = new Date(dueRaw);
-  if (isTaskOverdue(note, now.getTime())) return 'overdue';
+  if (isTaskOverdue(note, now)) return 'overdue';
   if (isToday(due)) return 'today';
   if (isThisWeek(due, { weekStartsOn: 0 })) return 'week';
   return 'later';
@@ -96,19 +95,19 @@ function matchesSearch(note: Note, query: string, locationLine: string, companie
   );
 }
 
-function dueLine(note: Note, now: number): { text: string; className: string } | null {
+function dueLine(note: Note, now: Date): { text: string; className: string } | null {
   const dueRaw = taskDueAt(note);
   if (!dueRaw) return null;
   const due = new Date(dueRaw);
-  const overdue = due.getTime() < now;
+  const overdue = isTaskOverdue(note, now);
   if (overdue) {
     return {
-      text: `Overdue ${format(due, 'MMM d, yyyy')}`,
+      text: `Overdue ${formatDueDateLabel(dueRaw)}`,
       className: 'text-red-400',
     };
   }
   return {
-    text: `Due ${format(due, 'MMM d, yyyy')}${isToday(due) ? `, ${format(due, 'h:mm a')}` : ''}`,
+    text: `Due ${formatDueDateLabel(dueRaw)}`,
     className: isToday(due) ? 'text-amber-400/90' : 'text-muted-foreground',
   };
 }
@@ -125,8 +124,7 @@ function TaskRow({
   onSelect: () => void;
 }) {
   const taskMeta = note.workspaceTaskMeta;
-  const now = Date.now();
-  const due = dueLine(note, now);
+  const due = dueLine(note, new Date());
 
   return (
     <button

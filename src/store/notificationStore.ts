@@ -5,26 +5,48 @@ const STORAGE_KEY = 'notes-notifications-v1';
 const MAX_ITEMS = 80;
 const TOAST_TTL_MS = 6500;
 
-export type AppNotification = {
+type WorkspaceContentKind = 'note' | 'task';
+
+type NotificationBase = {
   id: string;
-  type: 'task_assigned';
-  taskId: string;
-  folderId: string;
-  taskTitle: string;
   fromUserId: string | null;
   fromLabel: string;
   createdAt: string;
   read: boolean;
+  folderId: string;
 };
+
+export type AppNotification =
+  | (NotificationBase & {
+      type: 'task_assigned';
+      taskId: string;
+      taskTitle: string;
+    })
+  | (NotificationBase & {
+      type: 'workspace_mention';
+      contentKind: WorkspaceContentKind;
+      itemId: string;
+      postTitle: string;
+    })
+  | (NotificationBase & {
+      type: 'workspace_comment';
+      contentKind: WorkspaceContentKind;
+      itemId: string;
+      postTitle: string;
+    });
+
+type ToastOpenTarget =
+  | { kind: 'task_assigned'; taskId: string; folderId: string }
+  | { kind: 'workspace_task'; taskId: string; folderId: string }
+  | { kind: 'workspace_note'; noteId: string; folderId: string };
 
 type ToastNotice = {
   id: string;
   notificationId: string;
-  taskId: string;
-  folderId: string;
   title: string;
   subtitle: string;
   expiresAt: number;
+  open: ToastOpenTarget;
 };
 
 type NotificationState = {
@@ -34,6 +56,22 @@ type NotificationState = {
     taskId: string;
     folderId: string;
     taskTitle: string;
+    fromUserId: string | null;
+    fromLabel: string;
+  }) => void;
+  pushWorkspaceMention: (input: {
+    contentKind: WorkspaceContentKind;
+    itemId: string;
+    folderId: string;
+    postTitle: string;
+    fromUserId: string | null;
+    fromLabel: string;
+  }) => void;
+  pushWorkspaceComment: (input: {
+    contentKind: WorkspaceContentKind;
+    itemId: string;
+    folderId: string;
+    postTitle: string;
     fromUserId: string | null;
     fromLabel: string;
   }) => void;
@@ -51,7 +89,7 @@ function loadItems(): AppNotification[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as AppNotification[];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.filter((n) => n && typeof n.type === 'string') : [];
   } catch {
     return [];
   }
@@ -64,6 +102,15 @@ function saveItems(items: AppNotification[]) {
   } catch {
     /* ignore quota */
   }
+}
+
+function appendNotification(notification: AppNotification, toast: ToastNotice) {
+  return (s: NotificationState) => {
+    const items = [notification, ...s.items].slice(0, MAX_ITEMS);
+    saveItems(items);
+    const toasts = [...s.toasts, toast].slice(-4);
+    return { items, toasts };
+  };
 }
 
 export const useNotificationStore = create<NotificationState>((set, get) => ({
@@ -87,19 +134,72 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     const toast: ToastNotice = {
       id: uuidv4(),
       notificationId: notification.id,
-      taskId: input.taskId,
-      folderId: input.folderId,
       title,
       subtitle,
       expiresAt: Date.now() + TOAST_TTL_MS,
+      open: { kind: 'task_assigned', taskId: input.taskId, folderId: input.folderId },
     };
+    set(appendNotification(notification, toast));
+  },
 
-    set((s) => {
-      const items = [notification, ...s.items].slice(0, MAX_ITEMS);
-      saveItems(items);
-      const toasts = [...s.toasts, toast].slice(-4);
-      return { items, toasts };
-    });
+  pushWorkspaceMention: (input) => {
+    const notification: AppNotification = {
+      id: uuidv4(),
+      type: 'workspace_mention',
+      contentKind: input.contentKind,
+      itemId: input.itemId,
+      folderId: input.folderId,
+      postTitle: input.postTitle,
+      fromUserId: input.fromUserId,
+      fromLabel: input.fromLabel,
+      createdAt: new Date().toISOString(),
+      read: false,
+    };
+    const title = input.postTitle.trim() || (input.contentKind === 'task' ? 'Task' : 'Post');
+    const subtitle = `${input.fromLabel} mentioned you`;
+    const open: ToastOpenTarget =
+      input.contentKind === 'task'
+        ? { kind: 'workspace_task', taskId: input.itemId, folderId: input.folderId }
+        : { kind: 'workspace_note', noteId: input.itemId, folderId: input.folderId };
+    const toast: ToastNotice = {
+      id: uuidv4(),
+      notificationId: notification.id,
+      title,
+      subtitle,
+      expiresAt: Date.now() + TOAST_TTL_MS,
+      open,
+    };
+    set(appendNotification(notification, toast));
+  },
+
+  pushWorkspaceComment: (input) => {
+    const notification: AppNotification = {
+      id: uuidv4(),
+      type: 'workspace_comment',
+      contentKind: input.contentKind,
+      itemId: input.itemId,
+      folderId: input.folderId,
+      postTitle: input.postTitle,
+      fromUserId: input.fromUserId,
+      fromLabel: input.fromLabel,
+      createdAt: new Date().toISOString(),
+      read: false,
+    };
+    const title = input.postTitle.trim() || (input.contentKind === 'task' ? 'Task' : 'Post');
+    const subtitle = `${input.fromLabel} added a comment`;
+    const open: ToastOpenTarget =
+      input.contentKind === 'task'
+        ? { kind: 'workspace_task', taskId: input.itemId, folderId: input.folderId }
+        : { kind: 'workspace_note', noteId: input.itemId, folderId: input.folderId };
+    const toast: ToastNotice = {
+      id: uuidv4(),
+      notificationId: notification.id,
+      title,
+      subtitle,
+      expiresAt: Date.now() + TOAST_TTL_MS,
+      open,
+    };
+    set(appendNotification(notification, toast));
   },
 
   dismissToast: (toastId) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== toastId) })),
