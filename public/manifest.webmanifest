@@ -1,6 +1,6 @@
 {
-  "name": "Notes",
-  "short_name": "Notes",
+  "name": "Dino",
+  "short_name": "Dino",
   "description": "Personal notes with folders, calendar, and sync",
   "start_url": "/",
   "display": "standalone",

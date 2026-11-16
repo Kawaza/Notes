@@ -2,3 +2,4 @@
 alter table public.workspace_tasks replica identity full;
 alter table public.workspace_notes replica identity full;
 alter table public.workspace_folders replica identity full;
+alter table public.companies replica identity full;

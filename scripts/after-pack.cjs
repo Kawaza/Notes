@@ -17,9 +17,9 @@ exports.default = async function afterPack(context) {
     'file-version': version,
     'version-string': {
       CompanyName: 'Kawaza',
-      FileDescription: 'Notes',
-      ProductName: 'Notes',
-      InternalName: 'Notes',
+      FileDescription: 'Dino',
+      ProductName: 'Dino',
+      InternalName: 'Dino',
       OriginalFilename: `${productName}.exe`,
     },
   });

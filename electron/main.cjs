@@ -4,7 +4,7 @@ const fs = require('fs');
 const { setupAutoUpdater, onRendererReady, checkForUpdates, downloadUpdate, installUpdate, waitForRendererFlush, resolvePendingFlush, getIsInstallingUpdate } = require('./update.cjs');
 const { getTrayIcon, getWindowIcon } = require('./icon-utils.cjs');
 
-app.setName('Notes');
+app.setName('Dino');
 
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.notes.app');
@@ -137,7 +137,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    title: 'Notes',
+    title: 'Dino',
     icon: getWindowIcon(brandPalette, brandTheme),
     backgroundColor: '#ffffff',
     autoHideMenuBar: true,
@@ -257,7 +257,7 @@ function createWindow() {
 
 function createTray() {
   tray = new Tray(createTrayIcon());
-  tray.setToolTip('Notes');
+  tray.setToolTip('Dino');
 
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -265,7 +265,7 @@ function createTray() {
       click: triggerQuickCapture,
     },
     {
-      label: 'Open Notes',
+      label: 'Open Dino',
       click: showMainWindow,
     },
     {

@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { isCloudOnlyMode, isSignupEmailConfirmEnabled, isSupabaseConfigured } from '../sync/supabaseClient';
 import { NotesLogo } from './NotesLogo';
+import { APP_DISPLAY_NAME } from '../constants/brand';
 import { AuthPendingEmailPanel } from './AuthPendingEmailPanel';
 
 export function AuthScreen() {
@@ -111,7 +112,7 @@ export function AuthScreen() {
         <div className="text-center space-y-3">
           <div className="flex justify-center"><NotesLogo /></div>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Notes</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">{APP_DISPLAY_NAME}</h1>
             <p className="text-sm text-muted-foreground mt-1">
               {isCloudOnlyMode()
                 ? 'Create an account or sign in to access your notes.'

@@ -1,7 +1,7 @@
 {
   "name": "notes",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "A clean, local note-taking app with folders, calendar, and code blocks",
   "author": "Kawaza",
   "repository": {
@@ -26,8 +26,8 @@
   },
   "build": {
     "appId": "com.notes.app",
-    "productName": "Notes",
-    "artifactName": "Notes-Setup-${version}.${ext}",
+    "productName": "Dino",
+    "artifactName": "Dino-Setup-${version}.${ext}",
     "directories": {
       "output": "release"
     },
@@ -76,7 +76,7 @@
       "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
       "runAfterFinish": true,
-      "shortcutName": "Notes",
+      "shortcutName": "Dino",
       "include": "build/installer.nsh"
     }
   },

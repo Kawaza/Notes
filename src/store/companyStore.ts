@@ -18,6 +18,7 @@ import { ensureFreshSession } from '../sync/syncUtils';
 import { supabase } from '../sync/supabaseClient';
 import { useAuthStore } from './authStore';
 import {
+  parseWorkspaceFolderSelectionId,
   workspaceFolderArchiveSelectionId,
   workspaceFolderSelectionId,
   workspaceNoteSelectionId,
@@ -140,6 +141,8 @@ interface CompanyState {
   createWorkspaceNoteInFolder: (folderId: string, title?: string) => string;
   updateWorkspaceNote: (noteId: string, partial: Partial<Note>) => void;
   applyRemoteWorkspaceNote: (note: WorkspaceNote) => void;
+  applyRemoteCompany: (company: Company) => void;
+  removeRemoteCompany: (companyId: string) => void;
   applyRemoteWorkspaceFolder: (folder: WorkspaceFolder) => void;
   removeRemoteWorkspaceFolder: (folderId: string, companyId: string) => void;
   applyRemoteWorkspaceTask: (task: WorkspaceTask) => void;
@@ -794,6 +797,72 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
       return {
         notesByFolder: { ...s.notesByFolder, [folderId]: next },
       };
+    });
+  },
+
+  applyRemoteCompany: (company) => {
+    if (company.deletedAt) {
+      get().removeRemoteCompany(company.id);
+      return;
+    }
+    set((s) => {
+      const ix = s.companies.findIndex((c) => c.id === company.id);
+      if (ix < 0) {
+        return { companies: [...s.companies, company].sort((a, b) => a.name.localeCompare(b.name)) };
+      }
+      const companies = s.companies.map((c) => (c.id === company.id ? company : c));
+      return { companies };
+    });
+  },
+
+  removeRemoteCompany: (companyId) => {
+    const userId = useAuthStore.getState().user?.id ?? null;
+    let removedCompany: Company | undefined;
+    let removedFolderIds: string[] = [];
+    set((s) => {
+      removedCompany = s.companies.find((c) => c.id === companyId);
+      const folders = s.foldersByCompany[companyId] ?? [];
+      removedFolderIds = folders.map((f) => f.id);
+      const folderIds = new Set(removedFolderIds);
+      const companies = s.companies.filter((c) => c.id !== companyId);
+      const foldersByCompany = { ...s.foldersByCompany };
+      delete foldersByCompany[companyId];
+      const membersByCompany = { ...s.membersByCompany };
+      delete membersByCompany[companyId];
+      const notesByFolder = { ...s.notesByFolder };
+      const linksByFolder = { ...s.linksByFolder };
+      const secretsByFolder = { ...s.secretsByFolder };
+      const tasksByFolder = { ...s.tasksByFolder };
+      for (const fid of folderIds) {
+        delete notesByFolder[fid];
+        delete linksByFolder[fid];
+        delete secretsByFolder[fid];
+        delete tasksByFolder[fid];
+      }
+      let archivedCompanies = s.archivedCompanies;
+      if (removedCompany?.deletedAt && removedCompany.ownerId === userId) {
+        archivedCompanies = [
+          removedCompany,
+          ...s.archivedCompanies.filter((c) => c.id !== companyId),
+        ];
+      }
+      return {
+        companies,
+        archivedCompanies,
+        foldersByCompany,
+        membersByCompany,
+        notesByFolder,
+        linksByFolder,
+        secretsByFolder,
+        tasksByFolder,
+        myAssignedTasks: s.myAssignedTasks.filter((t) => t.companyId !== companyId),
+      };
+    });
+
+    void import('./useStore').then((m) => {
+      const { selectedFolderId, selectMyTasks } = m.useStore.getState();
+      const ws = selectedFolderId ? parseWorkspaceFolderSelectionId(selectedFolderId) : null;
+      if (ws && removedFolderIds.includes(ws.folderId)) selectMyTasks();
     });
   },
 

@@ -1,4 +1,5 @@
 import { Download, RefreshCw, Sparkles, X } from 'lucide-react';
+import { APP_DISPLAY_NAME } from '../constants/brand';
 import type { UpdateUiState } from '../hooks/useAppUpdater';
 
 type UpdateBannerProps = {
@@ -46,7 +47,7 @@ export function UpdateBanner({
       <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 bg-primary/10 border-b border-primary/20 text-sm">
         <Sparkles size={16} className="text-primary shrink-0" />
         <span className="flex-1">
-          Notes <strong>{state.version}</strong> is available
+          {APP_DISPLAY_NAME} <strong>{state.version}</strong> is available
           {state.currentVersion ? ` (you have ${state.currentVersion})` : ''}
         </span>
         <button
@@ -85,7 +86,7 @@ export function UpdateBanner({
       <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 bg-primary/10 border-b border-primary/20 text-sm">
         <Sparkles size={16} className="text-primary shrink-0" />
         <span className="flex-1">
-          Notes <strong>{state.version}</strong> is ready to install
+          {APP_DISPLAY_NAME} <strong>{state.version}</strong> is ready to install
         </span>
         <button
           onClick={onInstall}

@@ -2,13 +2,13 @@
 ; Use graceful taskkill (no /F) so the app can flush saves; electron also exits
 ; explicitly when the user chooses "Restart & update".
 !macro customInit
-  nsExec::Exec 'taskkill /IM Notes.exe /T'
+  nsExec::Exec 'taskkill /IM Dino.exe /T'
   Sleep 1500
 !macroend
 
 ; Desktop shortcut uses a separate icon; taskbar/start menu keep the exe icon.
 !macro customInstall
-  CreateShortCut "$DESKTOP\Notes.lnk" "$INSTDIR\Notes.exe" "" "$INSTDIR\desktop-icon.ico" 0
+  CreateShortCut "$DESKTOP\Dino.lnk" "$INSTDIR\Dino.exe" "" "$INSTDIR\desktop-icon.ico" 0
 !macroend
 
 !macro customUnInstall

@@ -1,9 +1,11 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
-import { mapWorkspaceFolderRow, mapWorkspaceTaskRow } from './companySync';
-import type { WorkspaceFolder, WorkspaceTask } from '../types/company';
+import { mapCompanyRow, mapWorkspaceFolderRow, mapWorkspaceTaskRow } from './companySync';
+import type { Company, WorkspaceFolder, WorkspaceTask } from '../types/company';
 
 export type WorkspaceCompanyRealtimeHandlers = {
+  onCompanyChange: (company: Company) => void;
+  onCompanyRemoved: (companyId: string) => void;
   onFolderUpsert: (folder: WorkspaceFolder) => void;
   onFolderDelete: (folderId: string, companyId: string) => void;
   onTaskUpsert: (task: WorkspaceTask) => void;
@@ -21,6 +23,26 @@ export function subscribeCompanyWorkspace(
 
   const channel: RealtimeChannel = supabase
     .channel(`company-workspace:${companyId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'companies',
+        filter: `id=eq.${companyId}`,
+      },
+      (payload) => {
+        if (payload.eventType === 'DELETE') {
+          handlers.onCompanyRemoved(companyId);
+          return;
+        }
+        const row = payload.new as Record<string, unknown>;
+        if (!row?.id) return;
+        const company = mapCompanyRow(row);
+        if (company.deletedAt) handlers.onCompanyRemoved(companyId);
+        else handlers.onCompanyChange(company);
+      },
+    )
     .on(
       'postgres_changes',
       {

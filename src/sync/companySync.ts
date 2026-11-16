@@ -5,7 +5,7 @@ import type { Company, CompanyMember, WorkspaceFolder, WorkspaceTask, WorkspaceT
 import { profileFullName } from '../types/profile';
 import { fetchMyProfile } from './profileSync';
 
-function mapCompany(row: Record<string, unknown>): Company {
+export function mapCompanyRow(row: Record<string, unknown>): Company {
   return {
     id: row.id as string,
     name: row.name as string,
@@ -74,7 +74,7 @@ export async function fetchMyCompanies(): Promise<Company[]> {
   } else if (error) {
     throw error;
   }
-  return (data ?? []).map(mapCompany).filter((c) => !c.deletedAt);
+  return (data ?? []).map(mapCompanyRow).filter((c) => !c.deletedAt);
 }
 
 export async function fetchDeletedCompaniesForOwner(): Promise<Company[]> {
@@ -88,7 +88,7 @@ export async function fetchDeletedCompaniesForOwner(): Promise<Company[]> {
     .not('deleted_at', 'is', null)
     .order('deleted_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []).map(mapCompany);
+  return (data ?? []).map(mapCompanyRow);
 }
 
 export async function restoreCompany(companyId: string): Promise<void> {
@@ -157,7 +157,7 @@ export async function createCompany(name: string): Promise<Company> {
 
   if (!rpcError && rpcData) {
     const row = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as Record<string, unknown>;
-    return mapCompany(row);
+    return mapCompanyRow(row);
   }
 
   const rpcMsg = rpcError?.message ?? '';
@@ -180,7 +180,7 @@ export async function createCompany(name: string): Promise<Company> {
     throw new Error(formatCompanyCreateError(error.message, error.code));
   }
 
-  const company = mapCompany(data);
+  const company = mapCompanyRow(data);
   const { error: memberErr } = await supabase.from('company_members').insert({
     company_id: company.id,
     user_id: userId,
