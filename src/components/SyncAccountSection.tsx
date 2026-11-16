@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Loader2, RefreshCw, Upload } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useStore } from '../store/useStore';
-import { isDesktopCloudOnly, isSupabaseConfigured } from '../sync/supabaseClient';
+import { isCloudOnlyMode, isSupabaseConfigured } from '../sync/supabaseClient';
 import type { SyncStatus } from '../sync/types';
 import { AuthPendingEmailPanel } from './AuthPendingEmailPanel';
 
@@ -42,7 +42,7 @@ export function SyncAccountSection() {
     authFeedback.kind === 'existing_account' ? authFeedback.email : null;
 
   const isElectron = Boolean(window.electronAPI?.isElectron);
-  const cloudOnlyDesktop = isDesktopCloudOnly();
+  const cloudOnly = isCloudOnlyMode();
 
   if (!isSupabaseConfigured()) {
     return (
@@ -202,7 +202,7 @@ export function SyncAccountSection() {
           {pulling ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
           Sync now
         </button>
-        {isElectron && !cloudOnlyDesktop && (
+        {isElectron && !cloudOnly && (
           <button
             type="button"
             disabled={uploading}

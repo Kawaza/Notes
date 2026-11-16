@@ -7,9 +7,20 @@ export function isSupabaseConfigured(): boolean {
   return Boolean(url && anonKey);
 }
 
-/** Desktop build with Supabase: sign-in required; notes live in the cloud (no local notes file). */
+/** Supabase builds: sign-in required; personal notes live in the cloud (no local notes file/cache). */
+export function isCloudOnlyMode(): boolean {
+  return isSupabaseConfigured();
+}
+
+/** @deprecated Use {@link isCloudOnlyMode}. */
 export function isDesktopCloudOnly(): boolean {
-  return Boolean(window.electronAPI?.isElectron) && isSupabaseConfigured();
+  return isCloudOnlyMode();
+}
+
+/** When false (default), sign-up does not send confirmation emails or use redirect links. */
+export function isSignupEmailConfirmEnabled(): boolean {
+  const raw = import.meta.env.VITE_SIGNUP_EMAIL_CONFIRM as string | undefined;
+  return raw === 'true' || raw === '1';
 }
 
 export const supabase: SupabaseClient | null = isSupabaseConfigured()

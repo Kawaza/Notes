@@ -58,11 +58,21 @@ export function AuthEmailConfirmed() {
             <div className="flex justify-center text-primary">
               <CheckCircle2 size={48} strokeWidth={1.5} />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-4">
               <h1 className="text-2xl font-semibold tracking-tight">Email confirmed</h1>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                You&apos;re all set. Open the Notes app and sign in with your email and password.
+                {window.electronAPI?.isElectron
+                  ? 'You\u2019re all set. Sign in with your email and password to continue.'
+                  : 'You\u2019re all set. Continue in the browser or open the Notes desktop app and sign in with the same account.'}
               </p>
+              {!window.electronAPI?.isElectron && (
+                <a
+                  href="/"
+                  className="inline-flex items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+                >
+                  Continue to Notes
+                </a>
+              )}
             </div>
           </>
         )}

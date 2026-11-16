@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Session, User } from '@supabase/supabase-js';
-import { supabase, isSupabaseConfigured } from '../sync/supabaseClient';
+import { supabase, isSignupEmailConfirmEnabled, isSupabaseConfigured } from '../sync/supabaseClient';
 import { getEmailAuthRedirectUrl, parseAuthDeepLink } from '../sync/authRedirect';
 import { useEncryptionStore } from './encryptionStore';
 import type { UserProfile } from '../types/profile';
@@ -136,8 +136,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   signIn: async (email, password) => {
     if (!supabase) throw new Error('Cloud sync is not configured');
+    const normalizedEmail = email.trim().toLowerCase();
     set({ authError: null, authFeedback: { kind: 'signing_in' } });
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    });
     if (error) {
       const msg = friendlyAuthError(error.message);
       set({
@@ -155,10 +159,11 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   signUp: async (email, password, names) => {
     if (!supabase) throw new Error('Cloud sync is not configured');
+    const normalizedEmail = email.trim().toLowerCase();
     set({ authError: null, authFeedback: { kind: 'creating_account' } });
-    const redirectTo = getEmailAuthRedirectUrl();
+    const redirectTo = isSignupEmailConfirmEnabled() ? getEmailAuthRedirectUrl() : undefined;
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: normalizedEmail,
       password,
       options: redirectTo ? { emailRedirectTo: redirectTo } : undefined,
     });
@@ -189,7 +194,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     }
 
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-      email,
+      email: normalizedEmail,
       password,
     });
     if (!signInError && signInData.session) {
@@ -206,7 +211,15 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     }
 
     if (signInError && isEmailNotConfirmedMessage(signInError.message)) {
-      set({ authFeedback: { kind: 'check_email', email }, authError: null });
+      if (isSignupEmailConfirmEnabled()) {
+        set({ authFeedback: { kind: 'check_email', email }, authError: null });
+      } else {
+        set({
+          authError:
+            'This account needs email confirmation in Supabase, or turn off “Confirm email” under Authentication → Providers.',
+          authFeedback: { kind: 'idle' },
+        });
+      }
       return;
     }
 
@@ -218,6 +231,9 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   resendSignupConfirmation: async (email) => {
     if (!supabase) throw new Error('Cloud sync is not configured');
+    if (!isSignupEmailConfirmEnabled()) {
+      throw new Error('Email confirmation is turned off. Sign in with your password instead.');
+    }
     const redirectTo = getEmailAuthRedirectUrl();
     const { error } = await supabase.auth.resend({
       type: 'signup',

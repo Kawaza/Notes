@@ -12,7 +12,7 @@ import {
 import { htmlToMarkdown, markdownToHtml } from '../utils/markdown';
 import { dndLog } from '../utils/dndDebug';
 import { isSyncAvailable, pullCloudData, pushCloudData, subscribeCloudChanges } from '../sync/cloudSync';
-import { isDesktopCloudOnly } from '../sync/supabaseClient';
+import { isCloudOnlyMode } from '../sync/supabaseClient';
 import { formatSyncError, isRateLimitError, withSyncTimeout } from '../sync/syncUtils';
 import {
   compactNoteForStorage,
@@ -275,7 +275,7 @@ function hasSyncContent(payload: SyncPayload): boolean {
 }
 
 async function loadLocalRaw(): Promise<AppData | null> {
-  if (isDesktopCloudOnly()) return null;
+  if (isCloudOnlyMode()) return null;
   if (window.electronAPI?.isElectron) {
     return window.electronAPI.loadData();
   }
@@ -304,7 +304,7 @@ async function loadDeviceRawForUpload(): Promise<AppData | null> {
 }
 
 async function saveLocalRaw(data: AppData): Promise<void> {
-  if (isDesktopCloudOnly()) return;
+  if (isCloudOnlyMode()) return;
   if (window.electronAPI?.isElectron) {
     const ok = window.electronAPI.saveDataSync
       ? window.electronAPI.saveDataSync(data)
@@ -546,7 +546,7 @@ export const useStore = create<Store>((set, get) => ({
   hydrate: async (userId = null, generation = hydrateGeneration) => {
     const isStale = () => !isHydrateGenerationCurrent(generation);
 
-    if (!userId && isDesktopCloudOnly()) {
+    if (!userId && isCloudOnlyMode()) {
       const finishSignedOut = (partial: Partial<Store>) => {
         if (isStale()) return;
         set({ ...partial, hydrated: true, syncStatus: 'offline', syncError: null });
@@ -651,7 +651,7 @@ export const useStore = create<Store>((set, get) => ({
       }
 
       const hasExistingFile =
-        !isDesktopCloudOnly() &&
+        !isCloudOnlyMode() &&
         (window.electronAPI?.hasDataFile != null
           ? await window.electronAPI.hasDataFile()
           : Boolean(localStorage.getItem('notes-app-data')));
@@ -688,7 +688,7 @@ export const useStore = create<Store>((set, get) => ({
       throw new Error('Sign in to sync first');
     }
 
-    const localRaw = isDesktopCloudOnly()
+    const localRaw = isCloudOnlyMode()
       ? getPersistableData(get())
       : await loadDeviceRawForUpload();
     if (!localRaw || !hasSyncContent(getSyncPayload(migrateData(localRaw) as Store))) {
@@ -835,7 +835,7 @@ export const useStore = create<Store>((set, get) => ({
       saveTimeout = null;
     }
     if (!get().hydrated) return;
-    if (!isDesktopCloudOnly() && window.electronAPI?.saveDataSync) {
+    if (!isCloudOnlyMode() && window.electronAPI?.saveDataSync) {
       const ok = window.electronAPI.saveDataSync(getPersistableData(get()));
       if (!ok) console.error('Failed to save notes to disk');
     }

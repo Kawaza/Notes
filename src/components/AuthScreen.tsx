@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
-import { isDesktopCloudOnly, isSupabaseConfigured } from '../sync/supabaseClient';
+import { isCloudOnlyMode, isSignupEmailConfirmEnabled, isSupabaseConfigured } from '../sync/supabaseClient';
 import { NotesLogo } from './NotesLogo';
 import { AuthPendingEmailPanel } from './AuthPendingEmailPanel';
 
@@ -113,7 +113,7 @@ export function AuthScreen() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Notes</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {isDesktopCloudOnly()
+              {isCloudOnlyMode()
                 ? 'Create an account or sign in to access your notes.'
                 : 'Sign in to access your notes on any device.'}
             </p>
@@ -167,7 +167,7 @@ export function AuthScreen() {
           </div>
         )}
 
-        {pendingEmail ? (
+        {pendingEmail && isSignupEmailConfirmEnabled() ? (
           <AuthPendingEmailPanel
             email={pendingEmail}
             resending={resending}
