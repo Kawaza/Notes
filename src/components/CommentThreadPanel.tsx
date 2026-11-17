@@ -203,6 +203,8 @@ export function CommentThreadPanel({
           value={replyDraft}
           onChange={setReplyDraft}
           members={memberMentionSuggestions}
+          inlineMenu
+          membersLoading={open && memberMentionSuggestions.length === 0}
           placeholder="Add a reply… @mention teammates"
           rows={2}
           className="w-full px-2.5 py-2 text-sm rounded-lg border border-border bg-background outline-none focus:ring-2 focus:ring-primary/30 resize-y min-h-[52px]"

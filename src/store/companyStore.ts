@@ -142,6 +142,7 @@ interface CompanyState {
   restoreWorkspaceFolder: (folderId: string) => Promise<void>;
   deleteWorkspaceTask: (taskId: string) => Promise<void>;
   getCompanyMembers: (companyId: string) => CompanyMember[];
+  loadCompanyMembers: (companyId: string) => Promise<void>;
   createWorkspaceNoteInFolder: (folderId: string, title?: string) => string;
   updateWorkspaceNote: (noteId: string, partial: Partial<Note>) => void;
   applyRemoteWorkspaceNote: (note: WorkspaceNote) => void;
@@ -232,6 +233,19 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
   },
 
   getCompanyMembers: (companyId) => get().membersByCompany[companyId] ?? [],
+
+  loadCompanyMembers: async (companyId) => {
+    if (!companyId) return;
+    if ((get().membersByCompany[companyId] ?? []).length > 0) return;
+    try {
+      const members = await fetchCompanyMembers(companyId);
+      set((s) => ({
+        membersByCompany: { ...s.membersByCompany, [companyId]: members },
+      }));
+    } catch (err) {
+      console.error(err);
+    }
+  },
 
   createCompanyWorkspace: async (name) => {
     const company = await createCompany(name);

@@ -24,12 +24,17 @@ type MemberMentionTextareaProps = Omit<
   value: string;
   onChange: (value: string) => void;
   members: MemberMentionSuggestion[];
+  /** Dropdown anchored below the field (for modals). */
+  inlineMenu?: boolean;
+  membersLoading?: boolean;
 };
 
 export function MemberMentionTextarea({
   value,
   onChange,
   members,
+  inlineMenu = false,
+  membersLoading = false,
   className,
   onKeyDown,
   onSelect,
@@ -43,7 +48,7 @@ export function MemberMentionTextarea({
 
   const updateMentionMenu = useCallback(
     (text: string, pos: number, el: HTMLTextAreaElement | null) => {
-      if (!el || members.length === 0) {
+      if (!el) {
         setActive(null);
         setMenuPos(null);
         return;
@@ -55,6 +60,10 @@ export function MemberMentionTextarea({
         return;
       }
       setActive(mention);
+      if (inlineMenu) {
+        setMenuPos({ top: 0, left: 0 });
+        return;
+      }
       const field = el.getBoundingClientRect();
       try {
         const coords = getTextareaCaretClientRect(el, pos);
@@ -67,7 +76,7 @@ export function MemberMentionTextarea({
       }
       setMenuPos({ top: field.bottom + 6, left: field.left });
     },
-    [members],
+    [inlineMenu],
   );
 
   const syncMention = useCallback(() => {
@@ -80,7 +89,7 @@ export function MemberMentionTextarea({
 
   useEffect(() => {
     syncMention();
-  }, [syncMention, value, caret, members]);
+  }, [syncMention, value, caret, members, membersLoading]);
 
   const options = useMemo(() => {
     if (!active) return [];
@@ -102,8 +111,19 @@ export function MemberMentionTextarea({
     });
   };
 
+  const menu = active && menuPos && (
+    <MemberMentionMenu
+      top={menuPos.top}
+      left={menuPos.left}
+      placement={inlineMenu ? 'inline' : 'fixed'}
+      options={options}
+      onPick={pickMember}
+      loading={membersLoading && members.length === 0}
+    />
+  );
+
   return (
-    <>
+    <div className={inlineMenu ? 'relative' : undefined}>
       <textarea
         ref={textareaRef}
         value={value}
@@ -115,7 +135,7 @@ export function MemberMentionTextarea({
           updateMentionMenu(next, pos, e.target);
         }}
         onKeyDown={(e) => {
-          if (active && options.length > 0) {
+          if (active && (options.length > 0 || membersLoading)) {
             if (options.length === 1 && (e.key === 'Enter' || e.key === 'Tab')) {
               e.preventDefault();
               pickMember(options[0]!);
@@ -148,27 +168,8 @@ export function MemberMentionTextarea({
         className={className}
         {...rest}
       />
-      {active && menuPos
-        ? createPortal(
-            members.length === 0 ? (
-              <div
-                className="fixed z-[300] min-w-[200px] max-w-sm px-3 py-2 rounded-lg border border-border bg-background shadow-lg text-xs text-muted-foreground"
-                style={{ top: menuPos.top, left: menuPos.left }}
-                data-member-mention-menu
-              >
-                No workspace members loaded
-              </div>
-            ) : (
-              <MemberMentionMenu
-                top={menuPos.top}
-                left={menuPos.left}
-                options={options}
-                onPick={pickMember}
-              />
-            ),
-            document.body,
-          )
-        : null}
-    </>
+      {inlineMenu && menu ? <div className="absolute left-0 right-0 top-full mt-1">{menu}</div> : null}
+      {!inlineMenu && menu ? createPortal(menu, document.body) : null}
+    </div>
   );
 }

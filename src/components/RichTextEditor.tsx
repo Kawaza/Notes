@@ -53,6 +53,7 @@ import { LinkDialog } from './LinkDialog';
 import { CommentDialog } from './CommentDialog';
 import { CommentThreadPanel } from './CommentThreadPanel';
 import { useAuthStore } from '../store/authStore';
+import { useCompanyStore } from '../store/companyStore';
 import { profileFullName } from '../types/profile';
 import { NoteImage } from './NoteImageExtension';
 import {
@@ -850,6 +851,12 @@ export function RichTextEditor({
       .filter((t) => !q || t.title.toLowerCase().includes(q))
       .slice(0, 8);
   }, [taskMention, taskLinkSuggestions]);
+
+  useEffect(() => {
+    if (!memberMentionCompanyId) return;
+    if (!commentDialogOpen && !commentThread) return;
+    void useCompanyStore.getState().loadCompanyMembers(memberMentionCompanyId);
+  }, [memberMentionCompanyId, commentDialogOpen, commentThread]);
 
   useEffect(() => {
     if (editor) onEditorReady?.(editor);

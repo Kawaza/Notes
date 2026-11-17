@@ -34,7 +34,9 @@ export function CommentDialog({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      if (document.querySelector('[data-member-mention-menu]')) return;
+      onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -83,6 +85,8 @@ export function CommentDialog({
             value={text}
             onChange={setText}
             members={memberMentionSuggestions}
+            inlineMenu
+            membersLoading={open && memberMentionSuggestions.length === 0}
             placeholder="What should your team know about this? @mention teammates"
             autoFocus
             rows={4}

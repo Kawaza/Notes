@@ -109,7 +109,7 @@ export function useMemberMentionSuggestions(
   useEffect(() => {
     if (!companyId) return;
     if ((membersByCompany[companyId] ?? []).length > 0) return;
-    void useCompanyStore.getState().refreshCompanies();
+    void useCompanyStore.getState().loadCompanyMembers(companyId);
   }, [companyId, membersByCompany]);
 
   const fromNote = useMemo(() => {

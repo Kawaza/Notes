@@ -270,11 +270,16 @@ export function Editor({
     () => resolveCompanyIdFromNoteFolder(note?.folderId ?? undefined, foldersByCompany),
     [note?.folderId, foldersByCompany],
   );
+  const companyIdFromSelectedFolder = useMemo(
+    () => resolveCompanyIdFromNoteFolder(selectedFolderId ?? undefined, foldersByCompany),
+    [selectedFolderId, foldersByCompany],
+  );
   const workspaceCompanyId =
     workspaceTaskMeta?.companyId ??
     note?.workspaceTaskMeta?.companyId ??
     wsFolderRaw?.companyId ??
     companyIdFromNoteFolder ??
+    companyIdFromSelectedFolder ??
     null;
   const workspaceMembers = useMemo(
     () =>
