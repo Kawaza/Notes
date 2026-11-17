@@ -78,6 +78,38 @@ export function resolveMentionedUserIdsFromText(
   return [...found];
 }
 
+function pushNewCommentMentionNotifications(
+  viewerId: string,
+  prevComments: ParsedComment[],
+  nextComments: ParsedComment[],
+  input: {
+    contentKind: 'note' | 'task';
+    itemId: string;
+    folderId: string;
+    postTitle: string;
+    defaultFromUserId: string | null;
+    companyId: string;
+  },
+) {
+  const prevByKey = new Map(prevComments.map((c) => [c.key, c]));
+  for (const comment of nextComments) {
+    const prevComment = prevByKey.get(comment.key);
+    const prevMentioned = new Set(prevComment?.mentionedUserIds ?? []);
+    const newlyMentioned = comment.mentionedUserIds.filter((id) => !prevMentioned.has(id));
+    if (!viewerId || newlyMentioned.length === 0) continue;
+    if (!newlyMentioned.includes(viewerId)) continue;
+    if (comment.authorUserId === viewerId) continue;
+    useNotificationStore.getState().pushWorkspaceComment({
+      contentKind: input.contentKind,
+      itemId: input.itemId,
+      folderId: input.folderId,
+      postTitle: input.postTitle,
+      fromUserId: comment.authorUserId ?? input.defaultFromUserId,
+      fromLabel: fromLabelForUser(comment.authorUserId ?? input.defaultFromUserId, input.companyId),
+    });
+  }
+}
+
 function fromLabelForUser(fromUserId: string | null, companyId: string): string {
   const userId = useAuthStore.getState().user?.id ?? null;
   if (!fromUserId || fromUserId === userId) return 'A teammate';
@@ -117,21 +149,14 @@ export function maybeNotifyWorkspaceNoteContent(existing: WorkspaceNote | undefi
     });
   }
 
-  const prevCommentKeys = new Set(prev.comments.map((c) => c.key));
-  for (const comment of next.comments) {
-    if (prevCommentKeys.has(comment.key)) continue;
-    const targets = new Set(comment.mentionedUserIds);
-    if (userId && targets.has(userId) && comment.authorUserId !== userId) {
-      useNotificationStore.getState().pushWorkspaceComment({
-        contentKind: 'note',
-        itemId: note.id,
-        folderId: note.folderId,
-        postTitle: title,
-        fromUserId: comment.authorUserId ?? fromUserId,
-        fromLabel: fromLabelForUser(comment.authorUserId ?? fromUserId, note.companyId),
-      });
-    }
-  }
+  pushNewCommentMentionNotifications(userId, prev.comments, next.comments, {
+    contentKind: 'note',
+    itemId: note.id,
+    folderId: note.folderId,
+    postTitle: title,
+    defaultFromUserId: fromUserId,
+    companyId: note.companyId,
+  });
 }
 
 export function maybeNotifyWorkspaceTaskContent(existing: WorkspaceTask | undefined, task: WorkspaceTask) {
@@ -162,19 +187,12 @@ export function maybeNotifyWorkspaceTaskContent(existing: WorkspaceTask | undefi
     });
   }
 
-  const prevCommentKeys = new Set(prev.comments.map((c) => c.key));
-  for (const comment of next.comments) {
-    if (prevCommentKeys.has(comment.key)) continue;
-    const targets = new Set(comment.mentionedUserIds);
-    if (userId && targets.has(userId) && comment.authorUserId !== userId) {
-      useNotificationStore.getState().pushWorkspaceComment({
-        contentKind: 'task',
-        itemId: task.id,
-        folderId: task.folderId,
-        postTitle: title,
-        fromUserId: comment.authorUserId ?? fromUserId,
-        fromLabel: fromLabelForUser(comment.authorUserId ?? fromUserId, task.companyId),
-      });
-    }
-  }
+  pushNewCommentMentionNotifications(userId, prev.comments, next.comments, {
+    contentKind: 'task',
+    itemId: task.id,
+    folderId: task.folderId,
+    postTitle: title,
+    defaultFromUserId: fromUserId,
+    companyId: task.companyId,
+  });
 }

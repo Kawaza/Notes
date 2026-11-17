@@ -1336,6 +1336,7 @@ export function RichTextEditor({
         open={commentDialogOpen}
         initialComment={commentDraft}
         title={commentDialogTitle}
+        memberMentionSuggestions={memberMentionSuggestions}
         onSave={saveComment}
         onRemove={
           commentDraft && !commentEditTargetRef.current?.replyId ? removeComment : undefined
@@ -1363,6 +1364,7 @@ export function RichTextEditor({
           onEditReply={openEditThreadReply}
           onDeleteRoot={deleteThreadRoot}
           onDeleteReply={deleteThreadReply}
+          memberMentionSuggestions={memberMentionSuggestions}
         />
       )}
 

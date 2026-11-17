@@ -4,6 +4,8 @@ import { MessageSquare, Pencil, Trash2, X } from 'lucide-react';
 import { ConfirmDialog } from './ConfirmDialog';
 import type { NoteCommentReply } from '../utils/noteCommentThread';
 import { usePrefersCoarsePointer } from '../hooks/useIsMobile';
+import { MemberMentionTextarea } from './MemberMentionTextarea';
+import type { MemberMentionSuggestion } from '../types/memberMention';
 
 type CommentThreadPanelProps = {
   open: boolean;
@@ -21,6 +23,7 @@ type CommentThreadPanelProps = {
   onEditReply: (replyId: string) => void;
   onDeleteRoot: () => void;
   onDeleteReply: (replyId: string) => void;
+  memberMentionSuggestions?: MemberMentionSuggestion[];
 };
 
 function clampPanelPosition(top: number, left: number, width: number, height: number) {
@@ -45,6 +48,7 @@ export function CommentThreadPanel({
   onEditReply,
   onDeleteRoot,
   onDeleteReply,
+  memberMentionSuggestions = [],
 }: CommentThreadPanelProps) {
   const coarsePointer = usePrefersCoarsePointer();
   const editActionsClass = coarsePointer
@@ -194,11 +198,12 @@ export function CommentThreadPanel({
         <label className="text-[11px] font-medium text-muted-foreground" htmlFor="comment-reply">
           Reply
         </label>
-        <textarea
+        <MemberMentionTextarea
           id="comment-reply"
           value={replyDraft}
-          onChange={(e) => setReplyDraft(e.target.value)}
-          placeholder="Add a reply…"
+          onChange={setReplyDraft}
+          members={memberMentionSuggestions}
+          placeholder="Add a reply… @mention teammates"
           rows={2}
           className="w-full px-2.5 py-2 text-sm rounded-lg border border-border bg-background outline-none focus:ring-2 focus:ring-primary/30 resize-y min-h-[52px]"
           onKeyDown={(e) => {

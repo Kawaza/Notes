@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { MessageSquare, X } from 'lucide-react';
 import { ConfirmDialog } from './ConfirmDialog';
+import { MemberMentionTextarea } from './MemberMentionTextarea';
+import type { MemberMentionSuggestion } from '../types/memberMention';
 
 type CommentDialogProps = {
   open: boolean;
@@ -10,6 +12,7 @@ type CommentDialogProps = {
   onRemove?: () => void;
   onClose: () => void;
   title?: string;
+  memberMentionSuggestions?: MemberMentionSuggestion[];
 };
 
 export function CommentDialog({
@@ -19,6 +22,7 @@ export function CommentDialog({
   onRemove,
   onClose,
   title,
+  memberMentionSuggestions = [],
 }: CommentDialogProps) {
   const [text, setText] = useState(initialComment);
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
@@ -74,11 +78,12 @@ export function CommentDialog({
           <label className="block text-sm text-muted-foreground mb-1.5" htmlFor="comment-body">
             Comment
           </label>
-          <textarea
+          <MemberMentionTextarea
             id="comment-body"
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="What should your team know about this?"
+            onChange={setText}
+            members={memberMentionSuggestions}
+            placeholder="What should your team know about this? @mention teammates"
             autoFocus
             rows={4}
             className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/30 resize-y min-h-[96px]"
