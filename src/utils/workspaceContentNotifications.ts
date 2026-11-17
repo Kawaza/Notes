@@ -4,6 +4,7 @@ import { useNotificationStore } from '../store/notificationStore';
 import type { WorkspaceNote, WorkspaceTask } from '../types/company';
 import type { MemberMentionSuggestion } from '../types/memberMention';
 import { memberDisplayName } from './memberDisplayName';
+import { parseNoteCommentReplies } from './noteCommentThread';
 
 type ParsedComment = {
   key: string;
@@ -37,8 +38,27 @@ function parseWorkspaceContentHtml(html: string): ParsedContent {
     const mentionedUserIds = rawMentioned
       ? rawMentioned.split(',').map((s) => s.trim()).filter(Boolean)
       : [];
-    const key = `${authorUserId ?? ''}|${text}`;
-    comments.push({ key, authorUserId, mentionedUserIds, text });
+    const threadId =
+      el.getAttribute('data-comment-thread-id')?.trim() ||
+      `${authorUserId ?? 'anon'}|${text.slice(0, 48)}`;
+    comments.push({
+      key: `${threadId}|root`,
+      authorUserId,
+      mentionedUserIds,
+      text,
+    });
+    const rawReplies = el.getAttribute('data-comment-replies');
+    for (const reply of parseNoteCommentReplies(rawReplies)) {
+      const replyMentions = reply.mentionedUserIds
+        ? reply.mentionedUserIds.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+      comments.push({
+        key: `${threadId}|${reply.id}`,
+        authorUserId: reply.authorUserId,
+        mentionedUserIds: replyMentions,
+        text: reply.text,
+      });
+    }
   }
 
   return { memberMentionUserIds, comments };

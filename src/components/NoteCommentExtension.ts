@@ -41,6 +41,22 @@ export const NoteComment = Mark.create({
           return { 'data-mentioned-user-ids': attrs.mentionedUserIds };
         },
       },
+      threadId: {
+        default: null,
+        parseHTML: (el) => el.getAttribute('data-comment-thread-id'),
+        renderHTML: (attrs) => {
+          if (!attrs.threadId) return {};
+          return { 'data-comment-thread-id': attrs.threadId };
+        },
+      },
+      replies: {
+        default: null,
+        parseHTML: (el) => el.getAttribute('data-comment-replies'),
+        renderHTML: (attrs) => {
+          if (!attrs.replies) return {};
+          return { 'data-comment-replies': attrs.replies };
+        },
+      },
     };
   },
 

@@ -19,6 +19,7 @@ import {
 import { resolveActiveLinkedTaskNote, resolveLinkedTaskTitle } from '../utils/linkedTaskResolve';
 import { Editor } from './Editor';
 import { ContextMenu } from './ContextMenu';
+import { ConfirmDialog } from './ConfirmDialog';
 import { MobileNavButton } from './MobileNavButton';
 import { useIsMobile } from '../hooks/useIsMobile';
 
@@ -45,6 +46,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const [panelNoteId, setPanelNoteId] = useState<string | null>(null);
   const [timeTick, setTimeTick] = useState(0);
   const [eventMenu, setEventMenu] = useState<{ x: number; y: number; noteId: string; title: string } | null>(null);
+  const [confirmRemoveBlock, setConfirmRemoveBlock] = useState<{ noteId: string; title: string } | null>(null);
 
   const isDark = theme === 'dark';
 
@@ -411,13 +413,32 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
               label: 'Remove',
               danger: true,
               onClick: () => {
-                removeFromCalendar(eventMenu.noteId);
+                setConfirmRemoveBlock({
+                  noteId: eventMenu.noteId,
+                  title: eventMenu.title,
+                });
                 setEventMenu(null);
               },
             },
           ]}
         />
       )}
+
+      <ConfirmDialog
+        open={!!confirmRemoveBlock}
+        title="Remove from calendar?"
+        message={
+          confirmRemoveBlock
+            ? `"${confirmRemoveBlock.title}" will be removed from the calendar. Any linked task stays in My Tasks.`
+            : ''
+        }
+        confirmLabel="Remove"
+        danger
+        onConfirm={() => {
+          if (confirmRemoveBlock) removeFromCalendar(confirmRemoveBlock.noteId);
+        }}
+        onClose={() => setConfirmRemoveBlock(null)}
+      />
     </div>
   );
 }

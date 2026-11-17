@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { MessageSquare, X } from 'lucide-react';
+import { ConfirmDialog } from './ConfirmDialog';
 
 type CommentDialogProps = {
   open: boolean;
@@ -8,6 +9,7 @@ type CommentDialogProps = {
   onSave: (comment: string) => void;
   onRemove?: () => void;
   onClose: () => void;
+  title?: string;
 };
 
 export function CommentDialog({
@@ -16,8 +18,10 @@ export function CommentDialog({
   onSave,
   onRemove,
   onClose,
+  title,
 }: CommentDialogProps) {
   const [text, setText] = useState(initialComment);
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
 
   useEffect(() => {
     if (open) setText(initialComment);
@@ -47,7 +51,7 @@ export function CommentDialog({
           <div className="flex items-center gap-2">
             <MessageSquare size={16} className="text-primary" />
             <h2 id="comment-dialog-title" className="text-base font-medium text-foreground">
-              {initialComment ? 'Edit comment' : 'Add comment'}
+              {title ?? (initialComment ? 'Edit comment' : 'Add comment')}
             </h2>
           </div>
           <button
@@ -83,10 +87,7 @@ export function CommentDialog({
             {onRemove && initialComment ? (
               <button
                 type="button"
-                onClick={() => {
-                  onRemove();
-                  onClose();
-                }}
+                onClick={() => setConfirmRemoveOpen(true)}
                 className="text-sm text-destructive hover:underline cursor-pointer"
               >
                 Remove comment
@@ -113,6 +114,18 @@ export function CommentDialog({
           </div>
         </form>
       </div>
+      <ConfirmDialog
+        open={confirmRemoveOpen}
+        title="Remove comment?"
+        message="The comment highlight and any replies on this text will be removed."
+        confirmLabel="Remove"
+        danger
+        onConfirm={() => {
+          onRemove?.();
+          onClose();
+        }}
+        onClose={() => setConfirmRemoveOpen(false)}
+      />
     </div>,
     document.body,
   );

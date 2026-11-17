@@ -6,7 +6,6 @@ export function AddSharedFolderDialog({
   onClose,
   onCreate,
   busy,
-  workspaceName,
 }: {
   open: boolean;
   onClose: () => void;
@@ -50,15 +49,7 @@ export function AddSharedFolderDialog({
             <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
               <FolderOpen size={16} className="text-primary" />
             </div>
-            <div>
-              <h2 className="text-sm font-semibold">Add shared folder</h2>
-              <p className="text-xs text-muted-foreground">
-                {workspaceName
-                  ? `Adds to workspace “${workspaceName}” for everyone on that invite`
-                  : 'Visible to everyone on this workspace invite'}
-              </p>
-
-            </div>
+            <h2 className="text-sm font-semibold">Add shared folder</h2>
           </div>
           <button
             type="button"
@@ -74,7 +65,7 @@ export function AddSharedFolderDialog({
             ref={inputRef}
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. CME, Marketing"
+            placeholder="e.g. Client Name"
             className="w-full px-3 py-2 text-sm rounded-lg bg-muted/30 border border-border outline-none focus:ring-2 focus:ring-primary/30"
             onKeyDown={(e) => e.key === 'Enter' && submit()}
           />

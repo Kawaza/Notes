@@ -26,6 +26,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { CalendarColorPicker } from './CalendarColorPicker';
 import { LinkIcon, getLinkServiceLabel } from './LinkIcon';
 import { getCalendarColor } from '../constants/calendarColors';
+import { ContextMenu } from './ContextMenu';
 import { OverflowMenu } from './OverflowMenu';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { openExternalUrl } from '../utils/openExternal';
@@ -67,14 +68,15 @@ async function copyText(text: string) {
 function LinkCard({
   link,
   onEdit,
-  onDelete,
+  onRequestDelete,
   onTogglePin,
 }: {
   link: FolderLink;
   onEdit: () => void;
-  onDelete: () => void;
+  onRequestDelete: () => void;
   onTogglePin: () => void;
 }) {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const overflowRef = useRef<HTMLButtonElement>(null);
   const isMobile = useIsMobile();
@@ -99,12 +101,19 @@ function LinkCard({
       label: 'Delete link',
       icon: <Trash2 size={14} />,
       danger: true,
-      onClick: onDelete,
+      onClick: onRequestDelete,
     },
   ];
 
   return (
-    <div className="group flex items-center gap-3 rounded-lg border border-border/60 bg-card px-3 py-2.5 hover:border-primary/30 transition-colors">
+  <>
+    <div
+      className="group flex items-center gap-3 rounded-lg border border-border/60 bg-card px-3 py-2.5 hover:border-primary/30 transition-colors"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setContextMenu({ x: e.clientX, y: e.clientY });
+      }}
+    >
       <LinkIcon url={link.url} size={18} />
       <a
         href={link.url}
@@ -150,7 +159,11 @@ function LinkCard({
           <button onClick={onEdit} className="p-1.5 rounded-md text-muted-foreground hover:bg-muted cursor-pointer" title="Edit link">
             <Pencil size={13} />
           </button>
-          <button onClick={onDelete} className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer" title="Delete link">
+          <button
+            onClick={onRequestDelete}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+            title="Delete link"
+          >
             <Trash2 size={13} />
           </button>
           <button
@@ -164,6 +177,10 @@ function LinkCard({
         </div>
       )}
     </div>
+    {contextMenu && (
+      <ContextMenu x={contextMenu.x} y={contextMenu.y} items={menuItems} onClose={() => setContextMenu(null)} />
+    )}
+  </>
   );
 }
 
@@ -171,13 +188,14 @@ function SecretCard({
   secret,
   linkTitle,
   onEdit,
-  onDelete,
+  onRequestDelete,
 }: {
   secret: FolderSecret;
   linkTitle?: string;
   onEdit: () => void;
-  onDelete: () => void;
+  onRequestDelete: () => void;
 }) {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [copiedField, setCopiedField] = useState<'username' | 'value' | null>(null);
   const [overflowOpen, setOverflowOpen] = useState(false);
@@ -186,7 +204,7 @@ function SecretCard({
 
   const secretMenuItems = [
     { label: 'Edit', icon: <Pencil size={14} />, onClick: onEdit },
-    { label: 'Delete', icon: <Trash2 size={14} />, danger: true, onClick: onDelete },
+    { label: 'Delete', icon: <Trash2 size={14} />, danger: true, onClick: onRequestDelete },
   ];
 
   const handleCopyField = async (e: React.MouseEvent, field: 'username' | 'value', text: string) => {
@@ -199,9 +217,14 @@ function SecretCard({
   const tooltip = [linkTitle && `Link: ${linkTitle}`, secret.notes].filter(Boolean).join(' · ');
 
   return (
+    <>
     <div
       className="group rounded-lg border border-border/60 bg-card hover:border-primary/30 transition-colors overflow-hidden"
       title={tooltip || undefined}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setContextMenu({ x: e.clientX, y: e.clientY });
+      }}
     >
       <div
         role="button"
@@ -270,7 +293,7 @@ function SecretCard({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDelete();
+                  onRequestDelete();
                 }}
                 className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
                 title="Delete"
@@ -319,6 +342,15 @@ function SecretCard({
         </div>
       </div>
     </div>
+    {contextMenu && (
+      <ContextMenu
+        x={contextMenu.x}
+        y={contextMenu.y}
+        items={secretMenuItems}
+        onClose={() => setContextMenu(null)}
+      />
+    )}
+    </>
   );
 }
 
@@ -611,7 +643,7 @@ export function FolderOverview({ folderId, onMobileBack }: FolderOverviewProps) 
                       setEditingLink(link);
                       setLinkDialogOpen(true);
                     }}
-                    onDelete={() => setDeleteLinkTarget(link)}
+                    onRequestDelete={() => setDeleteLinkTarget(link)}
                     onTogglePin={() => {
                       if (wsParsed && rawWorkspaceFolderId) {
                         void useCompanyStore
@@ -647,7 +679,7 @@ export function FolderOverview({ folderId, onMobileBack }: FolderOverviewProps) 
                       setEditingSecret(secret);
                       setSecretDialogOpenLocal(true);
                     }}
-                    onDelete={() => setDeleteSecretTarget(secret)}
+                    onRequestDelete={() => setDeleteSecretTarget(secret)}
                   />
                 ))}
               </div>

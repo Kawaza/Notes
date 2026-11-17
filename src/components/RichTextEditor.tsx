@@ -51,6 +51,7 @@ import { hydrateWorkspaceTaskMentionsInHtml } from '../utils/workspaceTaskMentio
 import type { TaskLinkSuggestion } from '../types/taskLink';
 import { LinkDialog } from './LinkDialog';
 import { CommentDialog } from './CommentDialog';
+import { CommentThreadPanel } from './CommentThreadPanel';
 import { useAuthStore } from '../store/authStore';
 import { profileFullName } from '../types/profile';
 import { NoteImage } from './NoteImageExtension';
@@ -68,6 +69,14 @@ import { WorkspaceMemberMention } from './WorkspaceMemberMentionExtension';
 import { NoteComment } from './NoteCommentExtension';
 import type { MemberMentionSuggestion } from '../types/memberMention';
 import { resolveMentionedUserIdsFromText } from '../utils/workspaceContentNotifications';
+import {
+  getNoteCommentAtPos,
+  newCommentReplyId,
+  readRepliesFromAttrs,
+  serializeNoteCommentReplies,
+  type NoteCommentMarkAttrs,
+  type NoteCommentReply,
+} from '../utils/noteCommentThread';
 import { clearEditorDropcursor } from '../utils/editorBlockDrag';
 const lowlight = createLowlight(common);
 if (lowlight.registered('xml')) {
@@ -441,12 +450,20 @@ export function RichTextEditor({
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
-  const [commentView, setCommentView] = useState<{
-    text: string;
-    authorName?: string | null;
+  const [commentDialogTitle, setCommentDialogTitle] = useState<string | undefined>();
+  const commentEditTargetRef = useRef<{
+    from: number;
+    to: number;
+    replyId?: string;
+  } | null>(null);
+  const [commentThread, setCommentThread] = useState<{
+    from: number;
+    to: number;
     top: number;
     left: number;
   } | null>(null);
+  const [commentThreadRevision, setCommentThreadRevision] = useState(0);
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const [insertMenu, setInsertMenu] = useState<{
     slashFrom: number | null;
     filter: string;
@@ -743,23 +760,27 @@ export function RichTextEditor({
       },
       // On mobile we scroll the note pane ourselves (keyboard-aware).
       handleScrollToSelection: () => !window.matchMedia('(max-width: 767px)').matches,
-      handleClick(_view, _pos, event) {
+      handleClick(_view, pos, event) {
+        const ed = editorRef.current;
+        if (!ed) return false;
         const target = event.target;
-        if (target instanceof Element) {
-          const commentEl = target.closest('.note-comment');
-          if (commentEl instanceof HTMLElement) {
-            const text = commentEl.getAttribute('data-note-comment')?.trim();
-            if (text) {
-              event.preventDefault();
-              const rect = commentEl.getBoundingClientRect();
-              setCommentView({
-                text,
-                authorName: commentEl.getAttribute('data-comment-author'),
-                top: rect.bottom + 6,
-                left: rect.left,
-              });
-              return true;
-            }
+        if (target instanceof Element && target.closest('.note-comment')) {
+          const found = getNoteCommentAtPos(ed, pos);
+          const text = found?.attrs.comment?.trim();
+          if (found && text) {
+            event.preventDefault();
+            const commentEl = target.closest('.note-comment');
+            const rect =
+              commentEl instanceof HTMLElement
+                ? commentEl.getBoundingClientRect()
+                : { bottom: event.clientY, left: event.clientX };
+            setCommentThread({
+              from: found.from,
+              to: found.to,
+              top: rect.bottom + 6,
+              left: rect.left,
+            });
+            return true;
           }
         }
         return false;
@@ -1101,9 +1122,33 @@ export function RichTextEditor({
     [editor, insertMenu, closeInsertMenu],
   );
 
+  const applyNoteCommentMark = useCallback(
+    (from: number, to: number, patch: Partial<NoteCommentMarkAttrs>) => {
+      if (!editor) return;
+      const found = getNoteCommentAtPos(editor, from);
+      const base: NoteCommentMarkAttrs = found?.attrs ?? {
+        comment: null,
+        authorName: null,
+        authorUserId: null,
+        mentionedUserIds: null,
+        threadId: null,
+        replies: null,
+      };
+      editor
+        .chain()
+        .setTextSelection({ from, to })
+        .setMark('noteComment', { ...base, ...patch })
+        .run();
+      setCommentThreadRevision((n) => n + 1);
+    },
+    [editor],
+  );
+
   const openCommentDialog = () => {
     if (!editor) return;
     if (editor.state.selection.empty) return;
+    commentEditTargetRef.current = null;
+    setCommentDialogTitle(undefined);
     const attrs = editor.getAttributes('noteComment');
     setCommentDraft((attrs.comment as string | undefined) ?? '');
     setCommentDialogOpen(true);
@@ -1115,6 +1160,48 @@ export function RichTextEditor({
     const authorName = profile ? profileFullName(profile) : 'You';
     const authorUserId = useAuthStore.getState().user?.id ?? null;
     const mentioned = resolveMentionedUserIdsFromText(text, memberMentionSuggestions);
+    const mentionedUserIds = mentioned.length > 0 ? mentioned.join(',') : null;
+    const target = commentEditTargetRef.current;
+
+    if (target?.replyId) {
+      const found = getNoteCommentAtPos(editor, target.from);
+      if (!found) return;
+      const replies = readRepliesFromAttrs(found.attrs);
+      const nextReplies = replies.map((r) =>
+        r.id === target.replyId
+          ? {
+              ...r,
+              text,
+              mentionedUserIds,
+            }
+          : r,
+      );
+      applyNoteCommentMark(target.from, target.to, {
+        replies: serializeNoteCommentReplies(nextReplies),
+      });
+      commentEditTargetRef.current = null;
+      setCommentDialogTitle(undefined);
+      return;
+    }
+
+    if (target) {
+      const found = getNoteCommentAtPos(editor, target.from);
+      const threadId = found?.attrs.threadId ?? crypto.randomUUID();
+      applyNoteCommentMark(target.from, target.to, {
+        comment: text,
+        authorName,
+        authorUserId,
+        mentionedUserIds,
+        threadId,
+        replies: found?.attrs.replies ?? null,
+      });
+      commentEditTargetRef.current = null;
+      setCommentDialogTitle(undefined);
+      return;
+    }
+
+    const existing = editor.getAttributes('noteComment');
+    const threadId = (existing.threadId as string | undefined) || crypto.randomUUID();
     editor
       .chain()
       .focus()
@@ -1123,25 +1210,119 @@ export function RichTextEditor({
         comment: text,
         authorName,
         authorUserId,
-        mentionedUserIds: mentioned.length > 0 ? mentioned.join(',') : null,
+        mentionedUserIds,
+        threadId,
+        replies: (existing.replies as string | undefined) ?? null,
       })
       .run();
+    setCommentThreadRevision((n) => n + 1);
   };
 
   const removeComment = () => {
-    editor?.chain().focus().extendMarkRange('noteComment').unsetMark('noteComment').run();
+    const target = commentEditTargetRef.current;
+    if (!editor) return;
+    if (target) {
+      editor
+        .chain()
+        .setTextSelection({ from: target.from, to: target.to })
+        .unsetMark('noteComment')
+        .run();
+      setCommentThread(null);
+    } else {
+      editor.chain().focus().extendMarkRange('noteComment').unsetMark('noteComment').run();
+    }
+    commentEditTargetRef.current = null;
+    setCommentThreadRevision((n) => n + 1);
   };
 
-  useEffect(() => {
-    if (!commentView) return;
-    const onPointerDown = (e: PointerEvent) => {
-      const t = e.target;
-      if (t instanceof Element && t.closest('[data-comment-popover]')) return;
-      setCommentView(null);
+  const threadSnapshot = useMemo(() => {
+    void commentThreadRevision;
+    if (!editor || !commentThread) return null;
+    const found = getNoteCommentAtPos(editor, commentThread.from);
+    if (!found?.attrs.comment?.trim()) return null;
+    return {
+      from: found.from,
+      to: found.to,
+      attrs: found.attrs,
+      replies: readRepliesFromAttrs(found.attrs),
     };
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [commentView]);
+  }, [editor, commentThread, commentThreadRevision]);
+
+  useEffect(() => {
+    if (!editor || !commentThread) return;
+    const bump = () => setCommentThreadRevision((n) => n + 1);
+    editor.on('update', bump);
+    return () => {
+      editor.off('update', bump);
+    };
+  }, [editor, commentThread]);
+
+  useEffect(() => {
+    if (commentThread && !threadSnapshot) setCommentThread(null);
+  }, [commentThread, threadSnapshot]);
+
+  const postThreadReply = (text: string) => {
+    if (!editor || !commentThread || !threadSnapshot) return;
+    const profile = useAuthStore.getState().profile;
+    const authorName = profile ? profileFullName(profile) : 'You';
+    const authorUserId = useAuthStore.getState().user?.id ?? null;
+    const mentioned = resolveMentionedUserIdsFromText(text, memberMentionSuggestions);
+    const reply: NoteCommentReply = {
+      id: newCommentReplyId(),
+      text,
+      authorName,
+      authorUserId,
+      mentionedUserIds: mentioned.length > 0 ? mentioned.join(',') : null,
+      createdAt: new Date().toISOString(),
+    };
+    const nextReplies = [...threadSnapshot.replies, reply];
+    const threadId = threadSnapshot.attrs.threadId ?? crypto.randomUUID();
+    applyNoteCommentMark(threadSnapshot.from, threadSnapshot.to, {
+      threadId,
+      replies: serializeNoteCommentReplies(nextReplies),
+    });
+  };
+
+  const deleteThreadReply = (replyId: string) => {
+    if (!threadSnapshot) return;
+    const nextReplies = threadSnapshot.replies.filter((r) => r.id !== replyId);
+    applyNoteCommentMark(threadSnapshot.from, threadSnapshot.to, {
+      replies: serializeNoteCommentReplies(nextReplies),
+    });
+  };
+
+  const deleteThreadRoot = () => {
+    if (!editor || !threadSnapshot) return;
+    editor
+      .chain()
+      .setTextSelection({ from: threadSnapshot.from, to: threadSnapshot.to })
+      .unsetMark('noteComment')
+      .run();
+    setCommentThread(null);
+    setCommentThreadRevision((n) => n + 1);
+  };
+
+  const openEditThreadRoot = () => {
+    if (!threadSnapshot) return;
+    commentEditTargetRef.current = { from: threadSnapshot.from, to: threadSnapshot.to };
+    setCommentDialogTitle('Edit comment');
+    setCommentDraft(threadSnapshot.attrs.comment ?? '');
+    setCommentDialogOpen(true);
+  };
+
+  const openEditThreadReply = (replyId: string) => {
+    if (!threadSnapshot) return;
+    const reply = threadSnapshot.replies.find((r) => r.id === replyId);
+    if (!reply) return;
+    commentEditTargetRef.current = {
+      from: threadSnapshot.from,
+      to: threadSnapshot.to,
+      replyId,
+    };
+    setCommentDialogTitle('Edit reply');
+    setCommentDraft(reply.text);
+    setCommentDialogOpen(true);
+  };
 
   return (
     <>
@@ -1154,22 +1335,35 @@ export function RichTextEditor({
       <CommentDialog
         open={commentDialogOpen}
         initialComment={commentDraft}
+        title={commentDialogTitle}
         onSave={saveComment}
-        onRemove={commentDraft ? removeComment : undefined}
-        onClose={() => setCommentDialogOpen(false)}
+        onRemove={
+          commentDraft && !commentEditTargetRef.current?.replyId ? removeComment : undefined
+        }
+        onClose={() => {
+          setCommentDialogOpen(false);
+          commentEditTargetRef.current = null;
+          setCommentDialogTitle(undefined);
+        }}
       />
-      {commentView && (
-        <div
-          data-comment-popover
-          className="fixed z-[70] max-w-sm rounded-lg border border-border bg-background shadow-xl px-3 py-2.5"
-          style={{ top: commentView.top, left: commentView.left }}
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          {commentView.authorName && (
-            <p className="text-[11px] font-medium text-muted-foreground mb-1">{commentView.authorName}</p>
-          )}
-          <p className="text-sm text-foreground whitespace-pre-wrap">{commentView.text}</p>
-        </div>
+      {commentThread && threadSnapshot && (
+        <CommentThreadPanel
+          open
+          anchor={{ top: commentThread.top, left: commentThread.left }}
+          root={{
+            text: threadSnapshot.attrs.comment ?? '',
+            authorName: threadSnapshot.attrs.authorName,
+            authorUserId: threadSnapshot.attrs.authorUserId,
+          }}
+          replies={threadSnapshot.replies}
+          currentUserId={currentUserId}
+          onClose={() => setCommentThread(null)}
+          onReply={postThreadReply}
+          onEditRoot={openEditThreadRoot}
+          onEditReply={openEditThreadReply}
+          onDeleteRoot={deleteThreadRoot}
+          onDeleteReply={deleteThreadReply}
+        />
       )}
 
       {!editor ? (

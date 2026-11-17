@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { format } from 'date-fns';
 import { X } from 'lucide-react';
+import { ConfirmDialog } from './ConfirmDialog';
 import { useStore } from '../store/useStore';
 import type { Note } from '../types';
 import { isWorkspaceTaskSelectionId } from '../types/company';
@@ -34,6 +36,7 @@ export function TaskSchedulePanel({
   const linkCalendarBlockToTask = useStore((s) => s.linkCalendarBlockToTask);
   const isCalendarBlock = Boolean(note.isCalendarBlock);
   const isWorkspaceTask = isWorkspaceTaskSelectionId(note.id);
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
 
   const clearSchedule = () => {
     if (isCalendarBlock) {
@@ -46,6 +49,8 @@ export function TaskSchedulePanel({
       scheduledEnd: undefined,
     });
   };
+
+  const requestClearSchedule = () => setConfirmRemoveOpen(true);
 
   if (!note.scheduledAt) return null;
 
@@ -86,7 +91,7 @@ export function TaskSchedulePanel({
             {folderSelect}
             <button
               type="button"
-              onClick={clearSchedule}
+              onClick={requestClearSchedule}
               className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
               title="Remove from calendar"
             >
@@ -94,6 +99,15 @@ export function TaskSchedulePanel({
             </button>
           </div>
         </div>
+        <ConfirmDialog
+          open={confirmRemoveOpen}
+          title="Remove from calendar?"
+          message="This time block will be removed from the calendar. Any linked task stays in My Tasks."
+          confirmLabel="Remove"
+          danger
+          onConfirm={clearSchedule}
+          onClose={() => setConfirmRemoveOpen(false)}
+        />
       </div>
     );
   }
@@ -106,7 +120,7 @@ export function TaskSchedulePanel({
           {folderSelect}
           <button
             type="button"
-            onClick={clearSchedule}
+            onClick={requestClearSchedule}
             className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
             title="Remove from calendar"
           >
@@ -114,6 +128,15 @@ export function TaskSchedulePanel({
           </button>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmRemoveOpen}
+        title="Remove from calendar?"
+        message="This scheduled block will be removed from the calendar."
+        confirmLabel="Remove"
+        danger
+        onConfirm={clearSchedule}
+        onClose={() => setConfirmRemoveOpen(false)}
+      />
     </div>
   );
 }

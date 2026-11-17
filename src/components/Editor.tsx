@@ -18,6 +18,7 @@ import {
   PanelLeft,
 } from 'lucide-react';
 import { OverflowMenu } from './OverflowMenu';
+import { ConfirmDialog } from './ConfirmDialog';
 import { useStore } from '../store/useStore';
 import { useResolvedNote } from '../hooks/useResolvedNote';
 import {
@@ -114,6 +115,7 @@ export function Editor({
   const mobileOverflowRef = useRef<HTMLButtonElement>(null);
   const editorScrollRef = useRef<HTMLDivElement>(null);
   const [mobileOverflowOpen, setMobileOverflowOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const isMobileEditorLayout = Boolean((onMobileBack || landscapeFocus) && !compact);
   useMobileKeyboardInset(editorScrollRef, isMobileEditorLayout, activeNoteId);
   const isMobile = useIsMobile();
@@ -514,13 +516,20 @@ export function Editor({
       label: 'Delete note',
       icon: <Trash2 size={14} />,
       danger: true,
-      onClick: () => {
-        deleteNote(note.id);
-        onClose?.();
-        onMobileBack?.();
-      },
+      onClick: () => setDeleteConfirmOpen(true),
     },
   ];
+
+  const confirmDeleteNote = () => {
+    if (calendarBlockMode) {
+      const blockId = calendarBlock?.id ?? activeNoteId ?? note.id;
+      deleteNote(blockId);
+    } else {
+      deleteNote(note.id);
+    }
+    onClose?.();
+    onMobileBack?.();
+  };
 
   return (
     <div className={`flex flex-col bg-background h-full overflow-hidden max-md:overflow-x-hidden ${compact ? '' : 'flex-1'}`}>
@@ -653,11 +662,7 @@ export function Editor({
             )}
             {calendarBlockMode ? (
               <button
-                onClick={() => {
-                  const blockId = calendarBlock?.id ?? activeNoteId ?? note.id;
-                  deleteNote(blockId);
-                  onClose?.();
-                }}
+                onClick={() => setDeleteConfirmOpen(true)}
                 className="p-2 rounded-md text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
                 title="Remove from calendar (linked task stays)"
               >
@@ -665,10 +670,7 @@ export function Editor({
               </button>
             ) : (
               <button
-                onClick={() => {
-                  deleteNote(note.id);
-                  onClose?.();
-                }}
+                onClick={() => setDeleteConfirmOpen(true)}
                 className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
                 title="Delete note"
               >
@@ -819,6 +821,20 @@ export function Editor({
       {lightboxImage && (
         <ImageLightbox image={lightboxImage} onClose={closeLightbox} />
       )}
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title={calendarBlockMode ? 'Remove from calendar?' : 'Delete note?'}
+        message={
+          calendarBlockMode
+            ? 'This time block will be removed from the calendar. Any linked task stays in My Tasks.'
+            : `"${note.title?.trim() || 'Untitled'}" will be permanently deleted.`
+        }
+        confirmLabel={calendarBlockMode ? 'Remove' : 'Delete'}
+        danger
+        onConfirm={confirmDeleteNote}
+        onClose={() => setDeleteConfirmOpen(false)}
+      />
     </div>
   );
 }
