@@ -12,7 +12,10 @@ import { parseWorkspaceTaskSelectionId, isWorkspaceTaskSelectionId } from '../ty
 import { useMyTasksList } from '../hooks/useMyTasksList';
 import { dueDateToAllDayStart, isDueDateOverdue } from '../utils/dueDate';
 import { defaultCalendarColorForPalette } from '../utils/defaultCalendarColor';
-import { resolveCalendarEventStyle } from '../utils/themeCalendarColor';
+import {
+  paintCalendarBlockEventElement,
+  resolveCalendarEventStyle,
+} from '../utils/themeCalendarColor';
 import { resolveActiveLinkedTaskNote, resolveLinkedTaskTitle } from '../utils/linkedTaskResolve';
 import { Editor } from './Editor';
 import { ContextMenu } from './ContextMenu';
@@ -56,6 +59,10 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
       ev.setProp('backgroundColor', style.backgroundColor);
       ev.setProp('borderColor', style.borderColor);
       ev.setProp('textColor', style.textColor);
+      const el = calendarContainerRef.current?.querySelector<HTMLElement>(
+        `[data-note-id="${CSS.escape(eventId)}"]`,
+      );
+      if (el) paintCalendarBlockEventElement(el, style);
     },
     [notes, isDark, colorPalette],
   );
@@ -102,9 +109,11 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
           title: title || 'Untitled',
           start: n.scheduledAt!,
           end: n.scheduledEnd || undefined,
+          display: 'block',
           backgroundColor: style.backgroundColor,
           borderColor: style.borderColor,
           textColor: style.textColor,
+          classNames: ['fc-calendar-time-block'],
         };
       });
   }, [notes, folders, tasksByFolder, myAssignedTasks, foldersByCompany, isDark, colorPalette]);
@@ -315,12 +324,32 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             eventResize={handleEventResize}
             eventDragStop={(info) => applyEventColors(info.event.id)}
             eventDurationEditable
-            eventClassNames={(arg) =>
-              arg.event.id && isDueTaskEventId(arg.event.id) ? ['fc-event-due-task'] : []
-            }
+            eventClassNames={(arg) => {
+              const id = arg.event.id ?? '';
+              if (isDueTaskEventId(id)) return ['fc-event-due-task'];
+              if (!arg.event.allDay) return ['fc-calendar-time-block'];
+              return [];
+            }}
             eventDidMount={(info) => {
               const dueTask = isDueTaskEventId(info.event.id);
-              if (!dueTask) info.el.dataset.noteId = info.event.id;
+              if (!dueTask) {
+                info.el.dataset.noteId = info.event.id;
+                const block = notes.find((n) => n.id === info.event.id);
+                const style = block
+                  ? resolveCalendarEventStyle(
+                      block.calendarColor ?? defaultCalendarColorForPalette(colorPalette),
+                      isDark,
+                      colorPalette,
+                    )
+                  : {
+                      backgroundColor: info.event.backgroundColor ?? '',
+                      borderColor: info.event.borderColor ?? '',
+                      textColor: info.event.textColor ?? '',
+                    };
+                if (style.backgroundColor && style.borderColor) {
+                  paintCalendarBlockEventElement(info.el, style);
+                }
+              }
               info.el.title = dueTask ? 'Click to open task' : 'Click to edit · Right-click to remove';
               info.el.addEventListener('dblclick', (e) => {
                 if (dueTask) return;

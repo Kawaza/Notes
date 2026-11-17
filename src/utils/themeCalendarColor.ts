@@ -70,6 +70,21 @@ function calendarTintBackground(borderHex: string, alpha = 0.08): string {
   return `rgb(${r} ${g} ${b} / ${Math.round(alpha * 100)}%)`;
 }
 
+export type CalendarEventPaint = {
+  backgroundColor: string;
+  borderColor: string;
+  textColor: string;
+};
+
+/** FC month dot-events ignore bg on the anchor; paint inline after mount. */
+export function paintCalendarBlockEventElement(el: HTMLElement, colors: CalendarEventPaint) {
+  el.style.backgroundColor = colors.backgroundColor;
+  el.style.borderColor = colors.borderColor;
+  el.style.color = colors.textColor;
+  el.style.borderStyle = 'solid';
+  el.style.borderWidth = '1px';
+}
+
 export function resolveCalendarEventStyle(
   colorId: string | undefined,
   isDark: boolean,

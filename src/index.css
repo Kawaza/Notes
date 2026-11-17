@@ -548,11 +548,16 @@ body {
   box-shadow: none;
 }
 
-.calendar-container .fc .fc-daygrid-dot-event:not(.fc-event-due-task) {
+.calendar-container .fc .fc-calendar-time-block {
+  border-style: solid;
+  border-width: 1px;
+}
+
+.calendar-container .fc .fc-daygrid-dot-event.fc-calendar-time-block {
   padding: 1px 4px;
 }
 
-.calendar-container .fc .fc-daygrid-dot-event:not(.fc-event-due-task) .fc-daygrid-event-dot {
+.calendar-container .fc .fc-daygrid-dot-event.fc-calendar-time-block .fc-daygrid-event-dot {
   display: none;
 }
 
