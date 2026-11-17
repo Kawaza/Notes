@@ -98,16 +98,35 @@ function pushNewCommentMentionNotifications(
     const newlyMentioned = comment.mentionedUserIds.filter((id) => !prevMentioned.has(id));
     if (!viewerId || newlyMentioned.length === 0) continue;
     if (!newlyMentioned.includes(viewerId)) continue;
-    if (comment.authorUserId === viewerId) continue;
-    useNotificationStore.getState().pushWorkspaceComment({
+    const fromUserId = comment.authorUserId ?? input.defaultFromUserId;
+    useNotificationStore.getState().pushWorkspaceMention({
       contentKind: input.contentKind,
       itemId: input.itemId,
       folderId: input.folderId,
       postTitle: input.postTitle,
-      fromUserId: comment.authorUserId ?? input.defaultFromUserId,
-      fromLabel: fromLabelForUser(comment.authorUserId ?? input.defaultFromUserId, input.companyId),
+      fromUserId,
+      fromLabel: fromLabelForUser(fromUserId, input.companyId),
+      inComment: true,
     });
   }
+}
+
+/** True when comment/reply mention lists changed (ignores server revision timing). */
+export function workspaceContentMentionsChanged(
+  prevHtml: string,
+  nextHtml: string,
+): boolean {
+  const prev = parseWorkspaceContentHtml(prevHtml);
+  const next = parseWorkspaceContentHtml(nextHtml);
+  if (prevHtml === nextHtml) return false;
+  const prevKeys = new Map(prev.comments.map((c) => [c.key, c.mentionedUserIds.join('|')]));
+  for (const c of next.comments) {
+    const before = prevKeys.get(c.key);
+    const after = c.mentionedUserIds.join('|');
+    if (before !== after) return true;
+    if (before === undefined && after) return true;
+  }
+  return prev.comments.length !== next.comments.length;
 }
 
 function fromLabelForUser(fromUserId: string | null, companyId: string): string {

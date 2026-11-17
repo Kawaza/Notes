@@ -10,7 +10,11 @@ function notificationTitle(n: AppNotification): string {
 
 function notificationSubtitle(n: AppNotification): string {
   if (n.type === 'task_assigned') return `${n.fromLabel} assigned you this task`;
-  if (n.type === 'workspace_mention') return `${n.fromLabel} mentioned you`;
+  if (n.type === 'workspace_mention') {
+    return n.inComment
+      ? `${n.fromLabel} mentioned you in a comment`
+      : `${n.fromLabel} mentioned you`;
+  }
   return `${n.fromLabel} added a comment`;
 }
 

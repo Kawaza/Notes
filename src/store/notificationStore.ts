@@ -27,6 +27,7 @@ export type AppNotification =
       contentKind: WorkspaceContentKind;
       itemId: string;
       postTitle: string;
+      inComment?: boolean;
     })
   | (NotificationBase & {
       type: 'workspace_comment';
@@ -66,6 +67,7 @@ type NotificationState = {
     postTitle: string;
     fromUserId: string | null;
     fromLabel: string;
+    inComment?: boolean;
   }) => void;
   pushWorkspaceComment: (input: {
     contentKind: WorkspaceContentKind;
@@ -152,11 +154,14 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       postTitle: input.postTitle,
       fromUserId: input.fromUserId,
       fromLabel: input.fromLabel,
+      inComment: input.inComment,
       createdAt: new Date().toISOString(),
       read: false,
     };
     const title = input.postTitle.trim() || (input.contentKind === 'task' ? 'Task' : 'Post');
-    const subtitle = `${input.fromLabel} mentioned you`;
+    const subtitle = input.inComment
+      ? `${input.fromLabel} mentioned you in a comment`
+      : `${input.fromLabel} mentioned you`;
     const open: ToastOpenTarget =
       input.contentKind === 'task'
         ? { kind: 'workspace_task', taskId: input.itemId, folderId: input.folderId }

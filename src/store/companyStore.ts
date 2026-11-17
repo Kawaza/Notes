@@ -63,6 +63,7 @@ import { maybeNotifyWorkspaceTaskAssigned } from '../utils/workspaceTaskNotifica
 import {
   maybeNotifyWorkspaceNoteContent,
   maybeNotifyWorkspaceTaskContent,
+  workspaceContentMentionsChanged,
 } from '../utils/workspaceContentNotifications';
 
 function companyIdForFolder(
@@ -409,17 +410,23 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
   updateWorkspaceTask: (taskId, partial) => {
     const folders = get().tasksByFolder;
     let folderId: string | null = null;
+    let existingBefore: WorkspaceTask | undefined;
     for (const [fid, tasks] of Object.entries(folders)) {
-      if (tasks.some((t) => t.id === taskId)) {
+      const hit = tasks.find((t) => t.id === taskId);
+      if (hit) {
         folderId = fid;
+        existingBefore = hit;
         break;
       }
     }
-    if (!folderId) {
+    if (!existingBefore) {
       const hit = get().myAssignedTasks.find((t) => t.id === taskId);
-      if (hit) folderId = hit.folderId;
+      if (hit) {
+        folderId = hit.folderId;
+        existingBefore = hit;
+      }
     }
-    if (!folderId) return;
+    if (!folderId || !existingBefore) return;
 
     const assigneePatch =
       'assigneeId' in partial ? { assigneeId: partial.assigneeId ?? null } : {};
@@ -446,6 +453,21 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
         myAssignedTasks: s.myAssignedTasks.map(patchRow),
       };
     });
+
+    if (partial.content !== undefined) {
+      const after: WorkspaceTask = {
+        ...existingBefore,
+        title: partial.title ?? existingBefore.title,
+        content: partial.content,
+        contentType: partial.contentType ?? existingBefore.contentType,
+        scheduledAt: partial.scheduledAt ?? existingBefore.scheduledAt,
+        scheduledEnd: partial.scheduledEnd ?? existingBefore.scheduledEnd,
+        assigneeId:
+          'assigneeId' in partial ? (partial.assigneeId ?? null) : existingBefore.assigneeId,
+        updatedAt: existingBefore.updatedAt,
+      };
+      maybeNotifyWorkspaceTaskContent(existingBefore, after);
+    }
 
     void updateWorkspaceTaskRow(taskId, {
       title: partial.title,
@@ -747,6 +769,21 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
       },
     };
 
+    const afterNote: WorkspaceNote = {
+      ...current,
+      title: patch.title ?? current.title,
+      content: patch.content ?? current.content,
+      contentType: patch.contentType ?? current.contentType,
+      tags: patch.tags ?? current.tags,
+      pinned: patch.pinned ?? current.pinned,
+      attachments: patch.attachments ?? current.attachments,
+      order: patch.order ?? current.order,
+      calendarColor: patch.calendarColor ?? current.calendarColor,
+      scheduledAt: patch.scheduledAt ?? current.scheduledAt,
+      scheduledEnd: patch.scheduledEnd ?? current.scheduledEnd,
+      updatedAt: current.updatedAt,
+    };
+
     set((s) => ({
       notesByFolder: {
         ...s.notesByFolder,
@@ -754,22 +791,26 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
           n.id === noteId
             ? {
                 ...n,
-                title: patch.title ?? n.title,
-                content: patch.content ?? n.content,
-                contentType: patch.contentType ?? n.contentType,
-                tags: patch.tags ?? n.tags,
-                pinned: patch.pinned ?? n.pinned,
-                attachments: patch.attachments ?? n.attachments,
-                order: patch.order ?? n.order,
-                calendarColor: patch.calendarColor ?? n.calendarColor,
-                scheduledAt: patch.scheduledAt ?? n.scheduledAt,
-                scheduledEnd: patch.scheduledEnd ?? n.scheduledEnd,
+                title: afterNote.title,
+                content: afterNote.content,
+                contentType: afterNote.contentType,
+                tags: afterNote.tags,
+                pinned: afterNote.pinned,
+                attachments: afterNote.attachments,
+                order: afterNote.order,
+                calendarColor: afterNote.calendarColor,
+                scheduledAt: afterNote.scheduledAt,
+                scheduledEnd: afterNote.scheduledEnd,
                 updatedAt: new Date().toISOString(),
               }
             : n,
         ),
       },
     }));
+
+    if (patch.content !== undefined) {
+      maybeNotifyWorkspaceNoteContent(current, afterNote);
+    }
 
     if (getWorkspaceNoteServerRevision(noteId) === undefined) {
       setWorkspaceNoteServerRevision(noteId, current.updatedAt);
@@ -987,8 +1028,14 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
         myAssignedTasks: myAssigned,
       };
     });
+    const mentionContentChanged = workspaceContentMentionsChanged(
+      existingBefore?.content ?? '',
+      task.content ?? '',
+    );
     if (!staleRemote) {
       maybeNotifyWorkspaceTaskAssigned(existingBefore, task);
+    }
+    if (mentionContentChanged || !staleRemote) {
       maybeNotifyWorkspaceTaskContent(existingBefore, task);
     }
   },
