@@ -15,6 +15,9 @@ interface MemberPickerProps {
   placeholder?: string;
   className?: string;
   menuPlacement?: 'above' | 'below';
+  menuAlign?: 'left' | 'right';
+  /** Label for the clear / null option when allowUnassigned is true */
+  clearLabel?: string;
   showAvatar?: boolean;
   compactPill?: boolean;
   disabled?: boolean;
@@ -38,7 +41,9 @@ export function MemberPicker({
   allowUnassigned = true,
   placeholder = 'Assign',
   className = '',
-  menuPlacement = 'above',
+  menuPlacement = 'below',
+  menuAlign = 'left',
+  clearLabel = 'Unassigned',
   showAvatar = false,
   compactPill = false,
   disabled = false,
@@ -59,6 +64,8 @@ export function MemberPicker({
     ? memberDisplayName(value, profilesByUserId, members, currentUserId, currentUserProfile)
     : placeholder;
 
+  const fullWidth = /\bw-full\b/.test(className);
+
   return (
     <div ref={rootRef} className={`relative ${className}`}>
       <button
@@ -70,7 +77,7 @@ export function MemberPicker({
             ? 'inline-flex items-center gap-1.5 min-w-0 h-full w-full text-xs text-foreground transition-colors cursor-pointer hover:opacity-90'
             : showAvatar
               ? 'inline-flex items-center gap-2 max-w-[220px] px-2 py-1 text-xs text-foreground transition-colors cursor-pointer'
-              : 'inline-flex items-center gap-1.5 max-w-[200px] rounded-full px-2.5 py-0.5 text-xs bg-muted/80 hover:bg-muted text-foreground transition-colors cursor-pointer'
+              : `inline-flex items-center gap-1.5 w-full ${fullWidth ? 'max-w-full' : 'max-w-[200px]'} rounded-[10px] p-2.5 text-xs bg-muted/80 hover:bg-muted text-foreground transition-colors cursor-pointer`
         }
       >
         {showAvatar ? (
@@ -89,9 +96,9 @@ export function MemberPicker({
       </button>
       {open && (
         <div
-          className={`absolute left-0 z-50 min-w-[200px] max-w-[280px] py-1 rounded-lg border border-border bg-background shadow-lg ${
-            menuPlacement === 'below' ? 'top-full mt-1' : 'bottom-full mb-1'
-          }`}
+          className={`absolute z-50 min-w-[200px] max-w-[280px] max-h-[min(280px,50vh)] overflow-y-auto py-1 rounded-lg border border-border bg-background shadow-lg ${
+            menuAlign === 'right' ? 'right-0' : 'left-0'
+          } ${menuPlacement === 'below' ? 'top-full mt-1' : 'bottom-full mb-1'}`}
         >
           {allowUnassigned && (
             <button
@@ -104,7 +111,7 @@ export function MemberPicker({
                 !value ? 'text-primary font-medium' : 'text-foreground'
               }`}
             >
-              Unassigned
+              {clearLabel}
             </button>
           )}
           {members.map((m) => (

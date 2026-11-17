@@ -76,18 +76,20 @@ export function WorkspaceAddTaskDialog({
           <>
             <p className="mt-4 text-xs font-medium text-muted-foreground">Assign to</p>
             <div className="mt-2">
-              <MemberPicker
-                value={assigneeId}
-                members={members}
-                profilesByUserId={profilesByUserId}
-                currentUserId={currentUserId}
-                currentUserProfile={currentUserProfile}
-                onChange={setAssigneeId}
-                allowUnassigned={false}
-                placeholder="Choose teammate"
-                className="w-full"
-                menuPlacement="below"
-              />
+              <div className="relative w-full">
+                <MemberPicker
+                  value={assigneeId}
+                  members={members}
+                  profilesByUserId={profilesByUserId}
+                  currentUserId={currentUserId}
+                  currentUserProfile={currentUserProfile}
+                  onChange={setAssigneeId}
+                  allowUnassigned={false}
+                  placeholder="Choose teammate"
+                  className="w-full max-w-full"
+                  menuPlacement="below"
+                />
+              </div>
             </div>
           </>
         )}
