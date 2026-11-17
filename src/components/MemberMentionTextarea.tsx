@@ -41,29 +41,46 @@ export function MemberMentionTextarea({
   const [active, setActive] = useState<ActiveMemberMention | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
 
+  const updateMentionMenu = useCallback(
+    (text: string, pos: number, el: HTMLTextAreaElement | null) => {
+      if (!el || members.length === 0) {
+        setActive(null);
+        setMenuPos(null);
+        return;
+      }
+      const mention = findActiveMemberMention(text, pos);
+      if (!mention) {
+        setActive(null);
+        setMenuPos(null);
+        return;
+      }
+      setActive(mention);
+      const field = el.getBoundingClientRect();
+      try {
+        const coords = getTextareaCaretClientRect(el, pos);
+        if (Number.isFinite(coords.top) && Number.isFinite(coords.left)) {
+          setMenuPos({ top: coords.top + coords.height + 6, left: coords.left });
+          return;
+        }
+      } catch {
+        /* fall through */
+      }
+      setMenuPos({ top: field.bottom + 6, left: field.left });
+    },
+    [members],
+  );
+
   const syncMention = useCallback(() => {
     const el = textareaRef.current;
-    if (!el || members.length === 0) {
-      setActive(null);
-      setMenuPos(null);
-      return;
-    }
+    if (!el) return;
     const pos = el.selectionStart ?? 0;
     setCaret(pos);
-    const mention = findActiveMemberMention(value, pos);
-    if (!mention) {
-      setActive(null);
-      setMenuPos(null);
-      return;
-    }
-    setActive(mention);
-    const coords = getTextareaCaretClientRect(el, pos);
-    setMenuPos({ top: coords.top + coords.height + 6, left: coords.left });
-  }, [value, members.length]);
+    updateMentionMenu(value, pos, el);
+  }, [updateMentionMenu, value]);
 
   useEffect(() => {
     syncMention();
-  }, [syncMention, value, caret]);
+  }, [syncMention, value, caret, members]);
 
   const options = useMemo(() => {
     if (!active) return [];
@@ -91,14 +108,23 @@ export function MemberMentionTextarea({
         ref={textareaRef}
         value={value}
         onChange={(e) => {
-          onChange(e.target.value);
-          setCaret(e.target.selectionStart ?? 0);
+          const next = e.target.value;
+          const pos = e.target.selectionStart ?? 0;
+          onChange(next);
+          setCaret(pos);
+          updateMentionMenu(next, pos, e.target);
         }}
         onKeyDown={(e) => {
-          if (active && options.length === 1 && (e.key === 'Enter' || e.key === 'Tab')) {
-            e.preventDefault();
-            pickMember(options[0]!);
-            return;
+          if (active && options.length > 0) {
+            if (options.length === 1 && (e.key === 'Enter' || e.key === 'Tab')) {
+              e.preventDefault();
+              pickMember(options[0]!);
+              return;
+            }
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+              e.preventDefault();
+              return;
+            }
           }
           if (e.key === 'Escape' && active) {
             e.stopPropagation();

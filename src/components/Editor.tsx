@@ -50,6 +50,7 @@ import {
   removeEmbeddedImageFromHtml,
 } from '../utils/noteImages';
 import { membersWithCurrentUser } from '../utils/companyMembers';
+import { resolveCompanyIdFromNoteFolder } from '../hooks/useMemberMentionSuggestions';
 import { memberDisplayName } from '../utils/memberDisplayName';
 import type { MemberMentionSuggestion } from '../types/memberMention';
 
@@ -265,8 +266,16 @@ export function Editor({
     return parseWorkspaceTaskSelectionId(activeNoteId)?.taskId ?? null;
   }, [activeNoteId, linkedTaskSelectionId]);
 
+  const companyIdFromNoteFolder = useMemo(
+    () => resolveCompanyIdFromNoteFolder(note?.folderId ?? undefined, foldersByCompany),
+    [note?.folderId, foldersByCompany],
+  );
   const workspaceCompanyId =
-    workspaceTaskMeta?.companyId ?? note?.workspaceTaskMeta?.companyId ?? wsFolderRaw?.companyId ?? null;
+    workspaceTaskMeta?.companyId ??
+    note?.workspaceTaskMeta?.companyId ??
+    wsFolderRaw?.companyId ??
+    companyIdFromNoteFolder ??
+    null;
   const workspaceMembers = useMemo(
     () =>
       workspaceCompanyId

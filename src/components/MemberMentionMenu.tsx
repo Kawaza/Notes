@@ -13,7 +13,7 @@ export function MemberMentionMenu({
 }) {
   return (
     <div
-      className="fixed z-[210] min-w-[200px] max-w-sm py-1 rounded-lg border border-border bg-background shadow-lg"
+      className="fixed z-[300] min-w-[200px] max-w-sm max-h-52 overflow-y-auto py-1 rounded-lg border border-border bg-background shadow-lg"
       style={{ top, left }}
       data-member-mention-menu
       onMouseDown={(e) => e.preventDefault()}
