@@ -22,9 +22,24 @@ import { ContextMenu } from './ContextMenu';
 import { ConfirmDialog } from './ConfirmDialog';
 import { MobileNavButton } from './MobileNavButton';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useAuthStore } from '../store/authStore';
+import { useMemberCalendarStore } from '../store/memberCalendarStore';
+import { CalendarViewOthersPicker } from './CalendarViewOthersPicker';
+import { memberDisplayName } from '../utils/memberDisplayName';
 
 export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const isMobile = useIsMobile();
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
+  const viewUserId = useMemberCalendarStore((s) => s.viewUserId);
+  const viewUserBlocks = useMemberCalendarStore((s) =>
+    viewUserId ? s.blocksByUser[viewUserId] : undefined,
+  );
+  const profilesByUserId = useCompanyStore((s) => s.profilesByUserId);
+  const createRemoteBlock = useMemberCalendarStore((s) => s.createRemoteBlock);
+  const updateRemoteBlockFromNote = useMemberCalendarStore((s) => s.updateRemoteBlockFromNote);
+  const viewingOther = Boolean(
+    viewUserId && currentUserId && viewUserId !== currentUserId,
+  );
   const notes = useStore((s) => s.notes);
   const folders = useStore((s) => s.folders);
   const tasksByFolder = useCompanyStore((s) => s.tasksByFolder);
@@ -50,9 +65,25 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
 
   const isDark = theme === 'dark';
 
+  const calendarSourceNotes = useMemo(() => {
+    if (viewingOther && viewUserId) {
+      return useMemberCalendarStore.getState().getViewCalendarNotes();
+    }
+    return notes;
+  }, [viewingOther, viewUserId, viewUserBlocks, notes]);
+
+  useEffect(() => {
+    return () => useMemberCalendarStore.getState().resetViewUser();
+  }, []);
+
+  const viewingLabel =
+    viewingOther && viewUserId
+      ? memberDisplayName(viewUserId, profilesByUserId, [], currentUserId)
+      : null;
+
   const applyEventColors = useCallback(
     (eventId: string) => {
-      const block = notes.find((n) => n.id === eventId);
+      const block = calendarSourceNotes.find((n) => n.id === eventId);
       if (!block) return;
       const api = calendarRef.current?.getApi();
       const ev = api?.getEventById(eventId);
@@ -66,7 +97,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
       );
       if (el) paintCalendarBlockEventElement(el, style);
     },
-    [notes, isDark, colorPalette],
+    [calendarSourceNotes, isDark, colorPalette],
   );
 
   useEffect(() => {
@@ -75,7 +106,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   }, []);
 
   const timeBlockEvents = useMemo(() => {
-    return notes
+    return calendarSourceNotes
       .filter((n) => {
         if (!n.isCalendarBlock || !n.scheduledAt) return false;
         if (!n.linkedTaskId) return true;
@@ -118,9 +149,18 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
           classNames: ['fc-calendar-time-block'],
         };
       });
-  }, [notes, folders, tasksByFolder, myAssignedTasks, foldersByCompany, isDark, colorPalette]);
+  }, [
+    calendarSourceNotes,
+    folders,
+    tasksByFolder,
+    myAssignedTasks,
+    foldersByCompany,
+    isDark,
+    colorPalette,
+  ]);
 
   const dueTaskEvents = useMemo(() => {
+    if (viewingOther) return [];
     const overdueStyle = isDark
       ? {
           backgroundColor: 'rgba(248, 113, 113, 0.22)',
@@ -173,7 +213,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
           extendedProps: { kind: 'due-task' as const },
         };
       });
-  }, [myTasks, isDark]);
+  }, [myTasks, isDark, viewingOther]);
 
   const events = useMemo(
     () => [...dueTaskEvents, ...timeBlockEvents],
@@ -207,6 +247,19 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
     const calendarApi = calendarRef.current?.getApi();
     calendarApi?.unselect();
 
+    if (viewingOther && viewUserId) {
+      void (async () => {
+        const noteId = await createRemoteBlock(viewUserId, {
+          title: 'Planning',
+          scheduledAt: info.start.toISOString(),
+          scheduledEnd: info.end?.toISOString(),
+          calendarColor: defaultCalendarColorForPalette(colorPalette),
+        });
+        setPanelNoteId(noteId);
+      })();
+      return;
+    }
+
     const noteId = createNote(null, 'Planning', { keepView: true, calendarBlock: true });
     updateNote(noteId, {
       scheduledAt: info.start.toISOString(),
@@ -225,10 +278,15 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
       info.revert();
       return;
     }
-    updateNote(info.event.id, {
+    const patch = {
       scheduledAt: info.event.start?.toISOString(),
       scheduledEnd: info.event.end?.toISOString(),
-    });
+    };
+    if (viewingOther && viewUserId) {
+      void updateRemoteBlockFromNote(viewUserId, info.event.id, patch);
+    } else {
+      updateNote(info.event.id, patch);
+    }
     applyEventColors(info.event.id);
   };
 
@@ -237,16 +295,21 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
       info.revert();
       return;
     }
-    updateNote(info.event.id, {
+    const patch = {
       scheduledAt: info.event.start?.toISOString(),
       scheduledEnd: info.event.end?.toISOString(),
-    });
+    };
+    if (viewingOther && viewUserId) {
+      void updateRemoteBlockFromNote(viewUserId, info.event.id, patch);
+    } else {
+      updateNote(info.event.id, patch);
+    }
     applyEventColors(info.event.id);
   };
 
   const handleExpand = () => {
     if (!panelNoteId) return;
-    const block = notes.find((n) => n.id === panelNoteId);
+    const block = calendarSourceNotes.find((n) => n.id === panelNoteId);
     const target = block?.linkedTaskId ?? panelNoteId;
     selectNote(target);
     setViewMode('notes');
@@ -281,12 +344,17 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
           <div className="flex items-center gap-2 min-w-0">
             {onOpenNav && <MobileNavButton onClick={onOpenNav} />}
             <div className="min-w-0">
-              <h2 className="text-lg font-medium">Calendar</h2>
+              <h2 className="text-lg font-medium">
+                {viewingLabel ? `${viewingLabel}'s calendar` : 'Calendar'}
+              </h2>
               <p className="text-sm text-muted-foreground font-normal hidden sm:block">
-                Due tasks show at the top of each day · Drag blocks to book time · Right-click a block to remove
+                {viewingOther
+                  ? 'You can add, move, and edit blocks on this calendar · Choose My calendar to return to yours'
+                  : 'Due tasks show at the top of each day · Drag blocks to book time · Right-click a block to remove'}
               </p>
             </div>
           </div>
+          <CalendarViewOthersPicker />
         </div>
 
         <div ref={calendarContainerRef} className="flex-1 p-1 md:p-4 calendar-container overflow-auto min-h-0">
@@ -336,7 +404,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
               const dueTask = isDueTaskEventId(info.event.id);
               if (!dueTask) {
                 info.el.dataset.noteId = info.event.id;
-                const block = notes.find((n) => n.id === info.event.id);
+                const block = calendarSourceNotes.find((n) => n.id === info.event.id);
                 const style = block
                   ? resolveCalendarEventStyle(
                       block.calendarColor ?? defaultCalendarColorForPalette(colorPalette),
@@ -356,7 +424,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
               info.el.addEventListener('dblclick', (e) => {
                 if (dueTask) return;
                 e.stopPropagation();
-                const block = notes.find((n) => n.id === info.event.id);
+                const block = calendarSourceNotes.find((n) => n.id === info.event.id);
                 if (!block) return;
                 const current =
                   block.linkedTaskId

@@ -92,10 +92,8 @@ export function Editor({
   const selectedNoteId = useStore((s) => s.selectedNoteId);
   const selectedFolderId = useStore((s) => s.selectedFolderId);
   const activeNoteId = noteIdProp ?? selectedNoteId;
-  const calendarBlock = useStore((s) =>
-    activeNoteId ? s.notes.find((n) => n.id === activeNoteId && n.isCalendarBlock) : undefined,
-  );
   const note = useResolvedNote(activeNoteId);
+  const calendarBlock = note?.isCalendarBlock ? note : undefined;
   const contentEditId =
     calendarBlock?.linkedTaskId && calendarBlockMode ? calendarBlock.linkedTaskId : activeNoteId;
   /** Distinct id for editor document (linked task vs calendar block / note). */

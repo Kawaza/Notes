@@ -34,6 +34,7 @@ import {
 import { emptySyncPayload, mergeSyncPayloads } from '../sync/mergeSync';
 import type { SyncPayload, SyncStatus } from '../sync/types';
 import { useAuthStore } from './authStore';
+import { getForeignCalendarOwnerId, useMemberCalendarStore } from './memberCalendarStore';
 import { useCompanyStore } from './companyStore';
 import {
   isWorkspaceNoteSelectionId,
@@ -860,7 +861,12 @@ export const useStore = create<Store>((set, get) => ({
     scheduleSave(get);
   },
 
-  setViewMode: (viewMode) => set({ viewMode, mobileNavOpen: false }),
+  setViewMode: (viewMode) => {
+    if (viewMode !== 'calendar') {
+      useMemberCalendarStore.getState().resetViewUser();
+    }
+    set({ viewMode, mobileNavOpen: false });
+  },
 
   openNotifications: () =>
     set({
@@ -1321,16 +1327,33 @@ export const useStore = create<Store>((set, get) => ({
       if (raw) useCompanyStore.getState().updateWorkspaceNote(raw.noteId, updates);
       return;
     }
+    const foreignOwner = getForeignCalendarOwnerId(useAuthStore.getState().user?.id ?? null);
+    if (foreignOwner) {
+      void useMemberCalendarStore.getState().updateRemoteBlockFromNote(foreignOwner, id, updates);
+      return;
+    }
     set((s) => ({
       notes: s.notes.map((n) =>
         n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n
       ),
     }));
     scheduleSave(get);
+    const userId = useAuthStore.getState().user?.id;
+    const note = get().notes.find((n) => n.id === id);
+    if (userId && note?.isCalendarBlock) {
+      void useMemberCalendarStore.getState().mirrorNoteIfCalendarBlock(note, userId);
+    }
   },
 
   linkCalendarBlockToTask: (blockId, taskId) => {
     const block = get().notes.find((n) => n.id === blockId);
+    const foreignOwner = getForeignCalendarOwnerId(useAuthStore.getState().user?.id ?? null);
+    if (foreignOwner) {
+      void useMemberCalendarStore.getState().updateRemoteBlock(foreignOwner, blockId, {
+        linkedTaskId: taskId,
+      });
+      return;
+    }
     if (!block?.isCalendarBlock) return;
     get().updateNote(blockId, { linkedTaskId: taskId });
   },
@@ -1356,7 +1379,13 @@ export const useStore = create<Store>((set, get) => ({
       }
       return;
     }
-    const deletedAt = new Date().toISOString();
+    const foreignOwner = getForeignCalendarOwnerId(useAuthStore.getState().user?.id ?? null);
+    if (foreignOwner) {
+      void useMemberCalendarStore.getState().deleteRemoteBlock(foreignOwner, id);
+      return;
+    }
+    const toDelete = get().notes.find((n) => n.id === id);
+  const deletedAt = new Date().toISOString();
     set((s) => {
       const noteDeletions = [...(s.noteDeletions ?? [])];
       const existing = noteDeletions.findIndex((d) => d.id === id);
@@ -1370,6 +1399,9 @@ export const useStore = create<Store>((set, get) => ({
       };
     });
     scheduleSave(get);
+    if (toDelete?.isCalendarBlock) {
+      void useMemberCalendarStore.getState().removeMirror(id);
+    }
   },
 
   duplicateNote: (id) => {

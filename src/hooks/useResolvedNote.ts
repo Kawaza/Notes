@@ -1,6 +1,9 @@
 import { useMemo } from 'react';
 import { useStore } from '../store/useStore';
 import { useCompanyStore } from '../store/companyStore';
+import { useMemberCalendarStore } from '../store/memberCalendarStore';
+import { useAuthStore } from '../store/authStore';
+import { memberCalendarBlockToNote } from '../utils/memberCalendarMappers';
 import type { Note } from '../types';
 import {
   isWorkspaceNoteSelectionId,
@@ -13,6 +16,9 @@ import { resolveLinkedTaskNote } from '../utils/linkedTaskResolve';
 
 export function useResolvedNote(activeNoteId: string | null | undefined): Note | undefined {
   const personalNotes = useStore((s) => s.notes);
+  const viewUserId = useMemberCalendarStore((s) => s.viewUserId);
+  const blocksByUser = useMemberCalendarStore((s) => s.blocksByUser);
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const notesByFolder = useCompanyStore((s) => s.notesByFolder);
   const tasksByFolder = useCompanyStore((s) => s.tasksByFolder);
   const myAssignedTasks = useCompanyStore((s) => s.myAssignedTasks);
@@ -32,6 +38,37 @@ export function useResolvedNote(activeNoteId: string | null | undefined): Note |
       return undefined;
     }
     if (!isWorkspaceNoteSelectionId(activeNoteId)) {
+      if (
+        viewUserId &&
+        currentUserId &&
+        viewUserId !== currentUserId
+      ) {
+        const remote = blocksByUser[viewUserId]?.find((b) => b.id === activeNoteId);
+        if (remote) {
+          const block = memberCalendarBlockToNote(remote);
+          if (block.linkedTaskId) {
+            const linked = resolveLinkedTaskNote(
+              block.linkedTaskId,
+              personalNotes,
+              tasksByFolder,
+              myAssignedTasks,
+              foldersByCompany,
+            );
+            if (linked) {
+              return {
+                ...block,
+                title: linked.title,
+                content: linked.content,
+                contentType: linked.contentType,
+                attachments: linked.attachments,
+                workspaceTaskMeta: linked.workspaceTaskMeta,
+                personalTaskMeta: linked.personalTaskMeta,
+              };
+            }
+          }
+          return block;
+        }
+      }
       const block = personalNotes.find((n) => n.id === activeNoteId);
       if (block?.isCalendarBlock) {
         if (block.linkedTaskId) {
@@ -65,6 +102,16 @@ export function useResolvedNote(activeNoteId: string | null | undefined): Note |
       if (hit) return workspaceNoteToNote(hit);
     }
     return undefined;
-  }, [activeNoteId, personalNotes, notesByFolder, tasksByFolder, myAssignedTasks, foldersByCompany]);
+  }, [
+    activeNoteId,
+    personalNotes,
+    viewUserId,
+    blocksByUser,
+    currentUserId,
+    notesByFolder,
+    tasksByFolder,
+    myAssignedTasks,
+    foldersByCompany,
+  ]);
 }
 
