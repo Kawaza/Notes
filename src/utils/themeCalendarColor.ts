@@ -65,6 +65,11 @@ export function themeCalendarSwatchStyle(palette: ColorPalette, isDark: boolean)
   return { backgroundColor: bg, borderColor: primary };
 }
 
+function calendarTintBackground(borderHex: string, alpha = 0.08): string {
+  const { r, g, b } = hexToRgb(borderHex);
+  return `rgb(${r} ${g} ${b} / ${Math.round(alpha * 100)}%)`;
+}
+
 export function resolveCalendarEventStyle(
   colorId: string | undefined,
   isDark: boolean,
@@ -72,20 +77,18 @@ export function resolveCalendarEventStyle(
 ) {
   if (!colorId || colorId === THEME_CALENDAR_COLOR_ID) {
     const primary = getPalettePrimary(palette, isDark ? 'dark' : 'light');
-    const bg = isDark
-      ? mixWith(primary, '#0a0a0a', 0.7)
-      : mixWith(primary, '#ffffff', 0.8);
     const text = isDark ? mixWith(primary, '#ffffff', 0.35) : mixWith(primary, '#000000', 0.55);
     return {
-      backgroundColor: bg,
+      backgroundColor: calendarTintBackground(primary),
       borderColor: primary,
       textColor: text,
     };
   }
   const color = CALENDAR_COLORS.find((c) => c.id === colorId) ?? CALENDAR_COLORS[0];
+  const borderColor = isDark ? color.borderDark : color.border;
   return {
-    backgroundColor: isDark ? color.bgDark : color.bg,
-    borderColor: isDark ? color.borderDark : color.border,
+    backgroundColor: calendarTintBackground(borderColor),
+    borderColor,
     textColor: isDark ? color.textDark : color.text,
   };
 }

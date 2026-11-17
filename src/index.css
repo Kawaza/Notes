@@ -512,19 +512,56 @@ body {
   border-radius: 0;
 }
 
-.calendar-container .fc .fc-timegrid-slot-label-cushion {
+.calendar-container .fc .fc-timegrid-slot-label-cushion,
+.calendar-container .fc .fc-timegrid-axis-cushion,
+.calendar-container .fc .fc-timegrid-axis-cushion.fc-scrollgrid-shrink-cushion {
   color: var(--color-muted-foreground);
   font-size: 11px;
   font-weight: 400;
 }
 
-.calendar-container .fc .fc-event {
+.calendar-container .fc .fc-daygrid-day-frame {
+  min-height: 1.563em;
+  position: relative;
+}
+
+.calendar-container .fc .fc-daygrid-day-events {
+  margin-bottom: 0;
+}
+
+.calendar-container .fc .fc-timegrid .fc-daygrid-day-events {
+  min-height: 0;
+}
+
+.calendar-container .fc .fc-timegrid-divider {
+  padding: 0;
+}
+
+.calendar-container .fc .fc-event:not(.fc-event-due-task) {
   border-radius: 6px;
   font-size: 12px;
   font-weight: 400;
   padding: 2px 6px;
   cursor: pointer;
-  border-left-width: 3px;
+  border-width: 1px;
+  border-style: solid;
+  box-shadow: none;
+}
+
+.calendar-container .fc .fc-daygrid-dot-event:not(.fc-event-due-task) {
+  padding: 1px 4px;
+}
+
+.calendar-container .fc .fc-daygrid-dot-event:not(.fc-event-due-task) .fc-daygrid-event-dot {
+  display: none;
+}
+
+.calendar-container .fc .fc-event.fc-event-due-task {
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  padding: 2px 6px;
+  cursor: pointer;
   box-shadow: none;
 }
 

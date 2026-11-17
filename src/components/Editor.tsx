@@ -96,6 +96,8 @@ export function Editor({
   const note = useResolvedNote(activeNoteId);
   const contentEditId =
     calendarBlock?.linkedTaskId && calendarBlockMode ? calendarBlock.linkedTaskId : activeNoteId;
+  /** Distinct id for editor document (linked task vs calendar block / note). */
+  const editorDocumentId = contentEditId ?? activeNoteId ?? note?.id ?? 'editor';
   const updateNote = useStore((s) => s.updateNote);
   const patchPersonalTask = useStore((s) => s.patchPersonalTask);
   const deleteNote = useStore((s) => s.deleteNote);
@@ -737,9 +739,9 @@ export function Editor({
       >
         {isMarkdown ? (
           <MarkdownEditor
-            key={note.id}
+            key={editorDocumentId}
             content={note.content}
-            onChange={(content) => updateNote(note.id, { content })}
+            onChange={(content) => updateNote(editorDocumentId, { content })}
             onWikiClick={(title) => {
               if (!openNoteByTitle(title)) {
                 alert(`No note found matching "${title}"`);
@@ -749,8 +751,8 @@ export function Editor({
           />
         ) : (
           <RichTextEditor
-            key={note.id}
-            noteId={note.id}
+            key={editorDocumentId}
+            noteId={editorDocumentId}
             content={note.content}
             attachments={note.attachments}
             onUpdate={handleRichUpdate}
@@ -806,7 +808,7 @@ export function Editor({
       </div>
 
       <TaskSchedulePanel
-        note={note}
+        note={calendarBlockMode && calendarBlock ? calendarBlock : note}
         compact={compact}
         onActiveNoteIdChange={(id) => {
           if (!id) onClose?.();

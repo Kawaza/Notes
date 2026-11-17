@@ -48,7 +48,9 @@ export function useResolvedNote(activeNoteId: string | null | undefined): Note |
               title: linked.title,
               content: linked.content,
               contentType: linked.contentType,
+              attachments: linked.attachments,
               workspaceTaskMeta: linked.workspaceTaskMeta,
+              personalTaskMeta: linked.personalTaskMeta,
             };
           }
         }

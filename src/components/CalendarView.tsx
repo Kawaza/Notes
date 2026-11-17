@@ -6,7 +6,6 @@ import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
 import type { EventClickArg, EventDropArg, DateSelectArg } from '@fullcalendar/core';
 import type { EventResizeDoneArg } from '@fullcalendar/interaction';
-import { Trash2, Archive } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useCompanyStore } from '../store/companyStore';
 import { parseWorkspaceTaskSelectionId, isWorkspaceTaskSelectionId } from '../types/company';
@@ -17,7 +16,6 @@ import { resolveCalendarEventStyle } from '../utils/themeCalendarColor';
 import { resolveActiveLinkedTaskNote, resolveLinkedTaskTitle } from '../utils/linkedTaskResolve';
 import { Editor } from './Editor';
 import { ContextMenu } from './ContextMenu';
-import { ConfirmDialog } from './ConfirmDialog';
 import { MobileNavButton } from './MobileNavButton';
 import { useIsMobile } from '../hooks/useIsMobile';
 
@@ -44,7 +42,6 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const [panelNoteId, setPanelNoteId] = useState<string | null>(null);
   const [timeTick, setTimeTick] = useState(0);
   const [eventMenu, setEventMenu] = useState<{ x: number; y: number; noteId: string; title: string } | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<{ noteId: string; title: string } | null>(null);
 
   const isDark = theme === 'dark';
 
@@ -253,19 +250,6 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
     }
   };
 
-  const confirmDeleteEvent = () => {
-    if (!deleteTarget) return;
-    const block = notes.find((n) => n.id === deleteTarget.noteId);
-    if (block?.linkedTaskId) {
-      deleteNote(block.linkedTaskId);
-    }
-    deleteNote(deleteTarget.noteId);
-    if (panelNoteId === deleteTarget.noteId) {
-      setPanelNoteId(null);
-    }
-    setDeleteTarget(null);
-  };
-
   const slotLaneClassNames = useCallback(
     (arg: { date?: Date }) => {
       void timeTick;
@@ -288,7 +272,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             <div className="min-w-0">
               <h2 className="text-lg font-medium">Calendar</h2>
               <p className="text-sm text-muted-foreground font-normal hidden sm:block">
-                Due tasks show at the top of each day · Drag blocks to book time · Right-click blocks for options
+                Due tasks show at the top of each day · Drag blocks to book time · Right-click a block to remove
               </p>
             </div>
           </div>
@@ -322,6 +306,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             slotMinTime="06:00:00"
             slotMaxTime="22:00:00"
             allDaySlot
+            allDayText="Tasks"
             eventOrder="start,-title"
             height="100%"
             slotLaneClassNames={slotLaneClassNames}
@@ -336,7 +321,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             eventDidMount={(info) => {
               const dueTask = isDueTaskEventId(info.event.id);
               if (!dueTask) info.el.dataset.noteId = info.event.id;
-              info.el.title = dueTask ? 'Click to open task' : 'Click to edit · Right-click for options';
+              info.el.title = dueTask ? 'Click to open task' : 'Click to edit · Right-click to remove';
               info.el.addEventListener('dblclick', (e) => {
                 if (dueTask) return;
                 e.stopPropagation();
@@ -394,45 +379,16 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
           onClose={() => setEventMenu(null)}
           items={[
             {
-              label: 'Remove from calendar (keep task)',
-              icon: <Archive size={14} />,
-              onClick: () => {
-                removeFromCalendar(eventMenu.noteId);
-                setEventMenu(null);
-              },
-            },
-            {
-              label: 'Delete block and linked task',
-              icon: <Trash2 size={14} />,
+              label: 'Remove',
               danger: true,
               onClick: () => {
-                setDeleteTarget({ noteId: eventMenu.noteId, title: eventMenu.title });
+                removeFromCalendar(eventMenu.noteId);
                 setEventMenu(null);
               },
             },
           ]}
         />
       )}
-
-      <ConfirmDialog
-        open={!!deleteTarget}
-        title="Delete block and task?"
-        message={
-          deleteTarget
-            ? (() => {
-                const block = notes.find((n) => n.id === deleteTarget.noteId);
-                if (block?.linkedTaskId) {
-                  return `"${deleteTarget.title}" and its linked task will be permanently deleted.`;
-                }
-                return `"${deleteTarget.title}" will be permanently deleted.`;
-              })()
-            : ''
-        }
-        confirmLabel="Delete"
-        danger
-        onConfirm={confirmDeleteEvent}
-        onClose={() => setDeleteTarget(null)}
-      />
     </div>
   );
 }
