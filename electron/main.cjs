@@ -1,4 +1,14 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, MenuItem, nativeImage, shell } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Tray,
+  Menu,
+  MenuItem,
+  nativeImage,
+  shell,
+  nativeTheme,
+} = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { setupAutoUpdater, onRendererReady, checkForUpdates, downloadUpdate, installUpdate, waitForRendererFlush, resolvePendingFlush, getIsInstallingUpdate } = require('./update.cjs');
@@ -98,8 +108,13 @@ function requestQuitAfterFlush() {
   app.exit(0);
 }
 
+/** Tray follows Windows light/dark taskbar; in-app palette theme is for the window icon only. */
+function trayIconTheme() {
+  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+}
+
 function applyBrandIcons() {
-  const trayIcon = getTrayIcon(brandPalette, brandTheme);
+  const trayIcon = getTrayIcon(brandPalette, trayIconTheme());
   if (tray && !trayIcon.isEmpty()) {
     tray.setImage(trayIcon);
   }
@@ -112,7 +127,7 @@ function applyBrandIcons() {
 }
 
 function createTrayIcon() {
-  return getTrayIcon(brandPalette, brandTheme);
+  return getTrayIcon(brandPalette, trayIconTheme());
 }
 
 function showMainWindow() {
@@ -384,6 +399,7 @@ if (gotTheLock) {
     if (bootUrl) pendingAuthCallbackUrl = bootUrl;
     createWindow();
     createTray();
+    nativeTheme.on('updated', () => applyBrandIcons());
   });
 
   app.on('window-all-closed', () => {

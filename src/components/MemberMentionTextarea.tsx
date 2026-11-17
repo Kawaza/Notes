@@ -148,14 +148,24 @@ export function MemberMentionTextarea({
         className={className}
         {...rest}
       />
-      {active && menuPos && members.length > 0
+      {active && menuPos
         ? createPortal(
-            <MemberMentionMenu
-              top={menuPos.top}
-              left={menuPos.left}
-              options={options}
-              onPick={pickMember}
-            />,
+            members.length === 0 ? (
+              <div
+                className="fixed z-[300] min-w-[200px] max-w-sm px-3 py-2 rounded-lg border border-border bg-background shadow-lg text-xs text-muted-foreground"
+                style={{ top: menuPos.top, left: menuPos.left }}
+                data-member-mention-menu
+              >
+                No workspace members loaded
+              </div>
+            ) : (
+              <MemberMentionMenu
+                top={menuPos.top}
+                left={menuPos.left}
+                options={options}
+                onPick={pickMember}
+              />
+            ),
             document.body,
           )
         : null}

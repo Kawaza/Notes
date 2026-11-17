@@ -20,6 +20,7 @@ function resolveCompanyIdForNoteId(
   foldersByCompany: Record<string, WorkspaceFolder[]>,
   tasksByFolder: Record<string, WorkspaceTask[]>,
   notesByFolder: Record<string, WorkspaceNote[]>,
+  myAssignedTasks: WorkspaceTask[],
 ): string | null {
   if (isWorkspaceTaskSelectionId(noteId)) {
     const parsed = parseWorkspaceTaskSelectionId(noteId);
@@ -28,6 +29,8 @@ function resolveCompanyIdForNoteId(
       const hit = rows.find((t) => t.id === parsed.taskId);
       if (hit?.companyId) return hit.companyId;
     }
+    const assigned = myAssignedTasks.find((t) => t.id === parsed.taskId);
+    if (assigned?.companyId) return assigned.companyId;
     return null;
   }
   if (isWorkspaceNoteSelectionId(noteId)) {
@@ -74,19 +77,34 @@ function buildSuggestions(
 export function useMemberMentionSuggestions(
   noteId: string,
   fromEditor: MemberMentionSuggestion[] = [],
+  companyIdOverride?: string | null,
 ): MemberMentionSuggestion[] {
   const foldersByCompany = useCompanyStore((s) => s.foldersByCompany);
   const membersByCompany = useCompanyStore((s) => s.membersByCompany);
   const profilesByUserId = useCompanyStore((s) => s.profilesByUserId);
   const tasksByFolder = useCompanyStore((s) => s.tasksByFolder);
   const notesByFolder = useCompanyStore((s) => s.notesByFolder);
+  const myAssignedTasks = useCompanyStore((s) => s.myAssignedTasks);
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const currentUserProfile = useAuthStore((s) => s.profile);
 
-  const companyId = useMemo(
-    () => resolveCompanyIdForNoteId(noteId, foldersByCompany, tasksByFolder, notesByFolder),
-    [noteId, foldersByCompany, tasksByFolder, notesByFolder],
-  );
+  const companyId = useMemo(() => {
+    if (companyIdOverride) return companyIdOverride;
+    return resolveCompanyIdForNoteId(
+      noteId,
+      foldersByCompany,
+      tasksByFolder,
+      notesByFolder,
+      myAssignedTasks,
+    );
+  }, [
+    companyIdOverride,
+    noteId,
+    foldersByCompany,
+    tasksByFolder,
+    notesByFolder,
+    myAssignedTasks,
+  ]);
 
   useEffect(() => {
     if (!companyId) return;
@@ -105,7 +123,12 @@ export function useMemberMentionSuggestions(
     );
   }, [companyId, membersByCompany, profilesByUserId, currentUserId, currentUserProfile]);
 
-  return fromEditor.length > 0 ? fromEditor : fromNote;
+  return useMemo(() => {
+    const merged = new Map<string, MemberMentionSuggestion>();
+    for (const m of fromNote) merged.set(m.userId, m);
+    for (const m of fromEditor) merged.set(m.userId, m);
+    return [...merged.values()];
+  }, [fromNote, fromEditor]);
 }
 
 export function resolveCompanyIdFromNoteFolder(

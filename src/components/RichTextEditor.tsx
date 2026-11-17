@@ -432,6 +432,7 @@ interface RichTextEditorProps {
   taskLinkSuggestions?: TaskLinkSuggestion[];
   onOpenTaskLink?: (taskId: string, folderId: string, kind: 'workspace' | 'personal') => void;
   memberMentionSuggestions?: MemberMentionSuggestion[];
+  memberMentionCompanyId?: string | null;
 }
 
 export function RichTextEditor({
@@ -447,8 +448,13 @@ export function RichTextEditor({
   taskLinkSuggestions = [],
   onOpenTaskLink,
   memberMentionSuggestions = [],
+  memberMentionCompanyId = null,
 }: RichTextEditorProps) {
-  const resolvedMemberMentions = useMemberMentionSuggestions(noteId, memberMentionSuggestions);
+  const resolvedMemberMentions = useMemberMentionSuggestions(
+    noteId,
+    memberMentionSuggestions,
+    memberMentionCompanyId,
+  );
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');

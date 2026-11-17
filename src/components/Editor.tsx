@@ -763,7 +763,8 @@ export function Editor({
         ) : (
           <RichTextEditor
             key={editorDocumentId}
-            noteId={editorDocumentId}
+            noteId={contentEditId ?? activeNoteId ?? note?.id ?? 'editor'}
+            memberMentionCompanyId={workspaceCompanyId}
             content={note.content}
             attachments={note.attachments}
             onUpdate={handleRichUpdate}
