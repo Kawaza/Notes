@@ -9,7 +9,7 @@ import type { EventResizeDoneArg } from '@fullcalendar/interaction';
 import { useStore } from '../store/useStore';
 import { useCompanyStore } from '../store/companyStore';
 import { parseWorkspaceTaskSelectionId, isWorkspaceTaskSelectionId } from '../types/company';
-import { useMyTasksList } from '../hooks/useMyTasksList';
+import { useCalendarDueTaskNotes } from '../hooks/useCalendarDueTaskNotes';
 import { dueDateToAllDayStart, isDueDateOverdue } from '../utils/dueDate';
 import { defaultCalendarColorForPalette } from '../utils/defaultCalendarColor';
 import {
@@ -26,6 +26,7 @@ import { useAuthStore } from '../store/authStore';
 import { useMemberCalendarStore } from '../store/memberCalendarStore';
 import { CalendarViewOthersPicker } from './CalendarViewOthersPicker';
 import { memberDisplayName } from '../utils/memberDisplayName';
+import { calendarTimeZone } from '../utils/calendarTimeZone';
 
 export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const isMobile = useIsMobile();
@@ -53,14 +54,14 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const selectNote = useStore((s) => s.selectNote);
   const setViewMode = useStore((s) => s.setViewMode);
   const openWorkspaceTask = useStore((s) => s.openWorkspaceTask);
-  const myTasks = useMyTasksList();
+  const calendarDueTasks = useCalendarDueTaskNotes(viewUserId, currentUserId);
 
   const calendarRef = useRef<FullCalendar>(null);
   const calendarContainerRef = useRef<HTMLDivElement>(null);
 
   const [panelNoteId, setPanelNoteId] = useState<string | null>(null);
-  const [timeTick, setTimeTick] = useState(0);
   const [eventMenu, setEventMenu] = useState<{ x: number; y: number; noteId: string; title: string } | null>(null);
+  const calendarTz = useMemo(() => calendarTimeZone(), []);
   const [confirmRemoveBlock, setConfirmRemoveBlock] = useState<{ noteId: string; title: string } | null>(null);
 
   const isDark = theme === 'dark';
@@ -99,11 +100,6 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
     },
     [calendarSourceNotes, isDark, colorPalette],
   );
-
-  useEffect(() => {
-    const id = setInterval(() => setTimeTick((t) => t + 1), 30_000);
-    return () => clearInterval(id);
-  }, []);
 
   const timeBlockEvents = useMemo(() => {
     return calendarSourceNotes
@@ -160,7 +156,6 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   ]);
 
   const dueTaskEvents = useMemo(() => {
-    if (viewingOther) return [];
     const overdueStyle = isDark
       ? {
           backgroundColor: 'rgba(248, 113, 113, 0.22)',
@@ -184,7 +179,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
           textColor: '#78350f',
         };
 
-    return myTasks
+    return calendarDueTasks
       .filter((note) => {
         const due = note.workspaceTaskMeta?.dueAt ?? note.personalTaskMeta?.dueAt;
         if (!due) return false;
@@ -213,7 +208,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
           extendedProps: { kind: 'due-task' as const },
         };
       });
-  }, [myTasks, isDark, viewingOther]);
+  }, [calendarDueTasks, isDark]);
 
   const events = useMemo(
     () => [...dueTaskEvents, ...timeBlockEvents],
@@ -324,19 +319,6 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
     }
   };
 
-  const slotLaneClassNames = useCallback(
-    (arg: { date?: Date }) => {
-      void timeTick;
-      if (!arg.date) return [];
-      const now = new Date();
-      const currentSlot =
-        Math.floor((now.getHours() * 60 + now.getMinutes()) / 30) * 30;
-      const slotMinutes = arg.date.getHours() * 60 + arg.date.getMinutes();
-      return slotMinutes === currentSlot ? ['fc-current-slot'] : [];
-    },
-    [timeTick],
-  );
-
   return (
     <div className="flex-1 flex h-full bg-background overflow-hidden">
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -349,7 +331,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
               </h2>
               <p className="text-sm text-muted-foreground font-normal hidden sm:block">
                 {viewingOther
-                  ? 'You can add, move, and edit blocks on this calendar · Choose My calendar to return to yours'
+                  ? 'Their workspace due tasks and time blocks · Choose My calendar to return to yours'
                   : 'Due tasks show at the top of each day · Drag blocks to book time · Right-click a block to remove'}
               </p>
             </div>
@@ -381,14 +363,14 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             selectMirror
             select={handleDateSelect}
             dayMaxEvents
-            nowIndicator={false}
+            timeZone={calendarTz}
+            nowIndicator
             slotMinTime="06:00:00"
             slotMaxTime="22:00:00"
             allDaySlot
             allDayText="Tasks"
             eventOrder="start,-title"
             height="100%"
-            slotLaneClassNames={slotLaneClassNames}
             eventClick={handleEventClick}
             eventDrop={handleEventDrop}
             eventResize={handleEventResize}

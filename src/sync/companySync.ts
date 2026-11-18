@@ -413,10 +413,16 @@ export async function fetchMyAssignedWorkspaceTasks(): Promise<WorkspaceTask[]> 
   if (!supabase) return [];
   const userId = await getSessionUserId();
   if (!userId) return [];
+  return fetchWorkspaceTasksForAssignee(userId);
+}
+
+/** Shared workspace tasks assigned to a teammate (for their calendar due strip). */
+export async function fetchWorkspaceTasksForAssignee(assigneeId: string): Promise<WorkspaceTask[]> {
+  if (!supabase || !assigneeId) return [];
   const { data, error } = await supabase
     .from('workspace_tasks')
     .select('*')
-    .eq('assignee_id', userId)
+    .eq('assignee_id', assigneeId)
     .eq('archived', false)
     .order('updated_at', { ascending: false });
   if (error) throw error;
