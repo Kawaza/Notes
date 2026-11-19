@@ -603,14 +603,14 @@ body {
   font-weight: 400;
 }
 
-.calendar-container .fc .fc-timegrid-now-indicator-line {
-  border-color: var(--color-primary);
-  border-width: 2px;
+.calendar-container .fc .fc-timegrid-now-indicator-line,
+.calendar-container .fc .fc-timegrid-now-indicator-arrow {
+  display: none !important;
 }
 
-.calendar-container .fc .fc-timegrid-now-indicator-arrow {
-  border-top-color: var(--color-primary);
-  border-bottom-color: var(--color-primary);
+.calendar-container .fc .fc-timegrid-slot-lane.fc-current-slot {
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+  box-shadow: inset 3px 0 0 var(--color-primary);
 }
 
 .calendar-container .fc .fc-timegrid-col.fc-day-today {

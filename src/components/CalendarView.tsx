@@ -26,7 +26,7 @@ import { useAuthStore } from '../store/authStore';
 import { useMemberCalendarStore } from '../store/memberCalendarStore';
 import { CalendarViewOthersPicker } from './CalendarViewOthersPicker';
 import { memberDisplayName } from '../utils/memberDisplayName';
-import { calendarTimeZone } from '../utils/calendarTimeZone';
+import { calendarTimeZone, calendarYmd, wallClockMinutes } from '../utils/calendarTimeZone';
 
 export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const isMobile = useIsMobile();
@@ -60,6 +60,7 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   const calendarContainerRef = useRef<HTMLDivElement>(null);
 
   const [panelNoteId, setPanelNoteId] = useState<string | null>(null);
+  const [timeTick, setTimeTick] = useState(0);
   const [eventMenu, setEventMenu] = useState<{ x: number; y: number; noteId: string; title: string } | null>(null);
   const calendarTz = useMemo(() => calendarTimeZone(), []);
   const [confirmRemoveBlock, setConfirmRemoveBlock] = useState<{ noteId: string; title: string } | null>(null);
@@ -76,6 +77,24 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
   useEffect(() => {
     return () => useMemberCalendarStore.getState().resetViewUser();
   }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => setTimeTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const slotLaneClassNames = useCallback(
+    (arg: { date?: Date }) => {
+      void timeTick;
+      if (!arg.date) return [];
+      const now = new Date();
+      if (calendarYmd(arg.date, calendarTz) !== calendarYmd(now, calendarTz)) return [];
+      const currentSlot = Math.floor(wallClockMinutes(now, calendarTz) / 30) * 30;
+      const slotMinutes = wallClockMinutes(arg.date, calendarTz);
+      return slotMinutes === currentSlot ? ['fc-current-slot'] : [];
+    },
+    [timeTick, calendarTz],
+  );
 
   const viewingLabel =
     viewingOther && viewUserId
@@ -364,13 +383,14 @@ export function CalendarView({ onOpenNav }: { onOpenNav?: () => void } = {}) {
             select={handleDateSelect}
             dayMaxEvents
             timeZone={calendarTz}
-            nowIndicator
+            nowIndicator={false}
             slotMinTime="06:00:00"
             slotMaxTime="22:00:00"
             allDaySlot
             allDayText="Tasks"
             eventOrder="start,-title"
             height="100%"
+            slotLaneClassNames={slotLaneClassNames}
             eventClick={handleEventClick}
             eventDrop={handleEventDrop}
             eventResize={handleEventResize}

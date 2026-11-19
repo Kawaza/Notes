@@ -193,6 +193,16 @@ export async function createCompany(name: string): Promise<Company> {
   return company;
 }
 
+export async function removeCompanyMember(companyId: string, memberUserId: string): Promise<void> {
+  if (!supabase) throw new Error('Sign in and configure cloud sync first');
+  const { error } = await supabase
+    .from('company_members')
+    .delete()
+    .eq('company_id', companyId)
+    .eq('user_id', memberUserId);
+  if (error) throw error;
+}
+
 export async function leaveCompany(companyId: string): Promise<void> {
   if (!supabase) throw new Error('Sign in and configure cloud sync first');
   const userId = await getSessionUserId();

@@ -109,6 +109,8 @@ interface CompanyState {
   createCompanyWorkspace: (name: string) => Promise<Company>;
   joinWithInviteCode: (code: string) => Promise<void>;
   leaveWorkspace: (companyId: string) => Promise<void>;
+  removeWorkspaceMember: (companyId: string, memberUserId: string) => Promise<void>;
+  reloadCompanyMembers: (companyId: string) => Promise<void>;
   deleteWorkspace: (companyId: string) => Promise<void>;
   restoreWorkspace: (companyId: string) => Promise<void>;
   purgeDeletedWorkspace: (companyId: string) => Promise<void>;
@@ -238,6 +240,11 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
   loadCompanyMembers: async (companyId) => {
     if (!companyId) return;
     if ((get().membersByCompany[companyId] ?? []).length > 0) return;
+    await get().reloadCompanyMembers(companyId);
+  },
+
+  reloadCompanyMembers: async (companyId) => {
+    if (!companyId) return;
     try {
       const members = await fetchCompanyMembers(companyId);
       set((s) => ({
@@ -273,6 +280,17 @@ export const useCompanyStore = create<CompanyState>((set, get) => ({
     const { leaveCompany } = await import('../sync/companySync');
     await leaveCompany(companyId);
     await get().refreshCompanies();
+  },
+
+  removeWorkspaceMember: async (companyId, memberUserId) => {
+    const { removeCompanyMember } = await import('../sync/companySync');
+    await removeCompanyMember(companyId, memberUserId);
+    set((s) => ({
+      membersByCompany: {
+        ...s.membersByCompany,
+        [companyId]: (s.membersByCompany[companyId] ?? []).filter((m) => m.userId !== memberUserId),
+      },
+    }));
   },
 
   deleteWorkspace: async (companyId) => {

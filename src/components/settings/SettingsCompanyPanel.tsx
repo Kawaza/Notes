@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArchiveRestore, Building2, Loader2, LogOut, Trash2 } from 'lucide-react';
 import { useCompanyStore } from '../../store/companyStore';
@@ -10,6 +10,7 @@ import { SettingsPanelShell } from './SettingsPanelShell';
 import { isSupabaseConfigured } from '../../sync/supabaseClient';
 import { normalizeInviteCodeInput } from '../../utils/inviteCode';
 import { ConfirmDialog } from '../ConfirmDialog';
+import { memberDisplayName } from '../../utils/memberDisplayName';
 
 export function SettingsCompanyPanel() {
   const createCompanyWorkspace = useCompanyStore((s) => s.createCompanyWorkspace);
@@ -22,7 +23,12 @@ export function SettingsCompanyPanel() {
   const companies = useCompanyStore((s) => s.companies);
   const archivedCompanies = useCompanyStore((s) => s.archivedCompanies);
   const foldersByCompany = useCompanyStore((s) => s.foldersByCompany);
+  const membersByCompany = useCompanyStore((s) => s.membersByCompany);
+  const profilesByUserId = useCompanyStore((s) => s.profilesByUserId);
+  const reloadCompanyMembers = useCompanyStore((s) => s.reloadCompanyMembers);
+  const removeWorkspaceMember = useCompanyStore((s) => s.removeWorkspaceMember);
   const userId = useAuthStore((s) => s.user?.id ?? null);
+  const currentUserProfile = useAuthStore((s) => s.profile);
 
   const sortedCompanies = useMemo(
     () => [...companies].sort((a, b) => a.name.localeCompare(b.name)),
@@ -42,6 +48,20 @@ export function SettingsCompanyPanel() {
   const [purgeTarget, setPurgeTarget] = useState<{ id: string; name: string } | null>(null);
   const [purgeBusy, setPurgeBusy] = useState(false);
   const [restoreBusyId, setRestoreBusyId] = useState<string | null>(null);
+  const [removeMemberTarget, setRemoveMemberTarget] = useState<{
+    companyId: string;
+    companyName: string;
+    memberUserId: string;
+    memberLabel: string;
+  } | null>(null);
+  const [removeMemberBusy, setRemoveMemberBusy] = useState(false);
+
+  useEffect(() => {
+    if (!userId) return;
+    for (const c of sortedCompanies) {
+      if (c.ownerId === userId) void reloadCompanyMembers(c.id);
+    }
+  }, [sortedCompanies, userId, reloadCompanyMembers]);
 
   if (!isSupabaseConfigured()) {
     return (
@@ -94,6 +114,19 @@ export function SettingsCompanyPanel() {
       window.alert(err instanceof Error ? err.message : 'Could not delete workspace');
     } finally {
       setPurgeBusy(false);
+    }
+  };
+
+  const confirmRemoveMember = async () => {
+    if (!removeMemberTarget) return;
+    setRemoveMemberBusy(true);
+    try {
+      await removeWorkspaceMember(removeMemberTarget.companyId, removeMemberTarget.memberUserId);
+      setRemoveMemberTarget(null);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Could not remove member');
+    } finally {
+      setRemoveMemberBusy(false);
     }
   };
 
@@ -201,34 +234,83 @@ export function SettingsCompanyPanel() {
               const folderNames = (foldersByCompany[c.id] ?? [])
                 .filter((f) => !f.archived)
                 .map((f) => f.name);
+              const members = membersByCompany[c.id] ?? [];
               return (
-                <li key={c.id} className="flex items-center gap-3 px-4 py-3 bg-background">
-                  <Building2 size={16} className="text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate text-foreground">{c.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {isOwner ? 'Owner' : 'Member'} · Invite {c.inviteCode}
-                      {folderNames.length > 0 ? ` · Folders: ${folderNames.join(', ')}` : ''}
-                    </p>
+                <li key={c.id} className="bg-background">
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <Building2 size={16} className="text-muted-foreground shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate text-foreground">{c.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {isOwner ? 'Owner' : 'Member'} · Invite {c.inviteCode}
+                        {folderNames.length > 0 ? ` · Folders: ${folderNames.join(', ')}` : ''}
+                        {isOwner && members.length > 0 ? ` · ${members.length} members` : ''}
+                      </p>
+                    </div>
+                    {isOwner ? (
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget({ id: c.id, name: c.name })}
+                        className="flex items-center gap-1.5 text-xs font-medium text-destructive border border-destructive/40 bg-destructive/10 hover:bg-destructive/20 px-2.5 py-1 rounded-md cursor-pointer shrink-0"
+                      >
+                        <Trash2 size={14} />
+                        Delete
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setLeaveTarget({ id: c.id, name: c.name })}
+                        className="flex items-center gap-1.5 text-xs text-foreground border border-border px-2.5 py-1 rounded-md hover:bg-muted cursor-pointer shrink-0"
+                      >
+                        <LogOut size={14} />
+                        Leave
+                      </button>
+                    )}
                   </div>
-                  {isOwner ? (
-                    <button
-                      type="button"
-                      onClick={() => setDeleteTarget({ id: c.id, name: c.name })}
-                      className="flex items-center gap-1.5 text-xs font-medium text-destructive border border-destructive/40 bg-destructive/10 hover:bg-destructive/20 px-2.5 py-1 rounded-md cursor-pointer shrink-0"
-                    >
-                      <Trash2 size={14} />
-                      Delete
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setLeaveTarget({ id: c.id, name: c.name })}
-                      className="flex items-center gap-1.5 text-xs text-foreground border border-border px-2.5 py-1 rounded-md hover:bg-muted cursor-pointer shrink-0"
-                    >
-                      <LogOut size={14} />
-                      Leave
-                    </button>
+                  {isOwner && members.length > 0 && (
+                    <div className="px-4 pb-3 border-t border-border/50 mx-4">
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide pt-3 pb-1.5">
+                        Members
+                      </p>
+                      <ul className="space-y-1">
+                        {members.map((m) => {
+                          const label = memberDisplayName(
+                            m.userId,
+                            profilesByUserId,
+                            members,
+                            userId,
+                            currentUserProfile,
+                          );
+                          const isMemberOwner = m.userId === c.ownerId;
+                          return (
+                            <li
+                              key={m.userId}
+                              className="flex items-center gap-2 min-h-8 text-sm text-foreground"
+                            >
+                              <span className="flex-1 truncate">{label}</span>
+                              {isMemberOwner ? (
+                                <span className="text-xs text-muted-foreground shrink-0">Owner</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setRemoveMemberTarget({
+                                      companyId: c.id,
+                                      companyName: c.name,
+                                      memberUserId: m.userId,
+                                      memberLabel: label,
+                                    })
+                                  }
+                                  className="text-xs font-medium text-destructive border border-destructive/35 px-2 py-0.5 rounded-md hover:bg-destructive/10 cursor-pointer shrink-0"
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
                   )}
                 </li>
               );
@@ -289,6 +371,19 @@ export function SettingsCompanyPanel() {
         </div>
       )}
 
+      <ConfirmDialog
+        open={!!removeMemberTarget}
+        title="Remove from workspace?"
+        message={
+          removeMemberTarget
+            ? `${removeMemberTarget.memberLabel} will lose access to "${removeMemberTarget.companyName}". They can rejoin with the invite code.`
+            : ''
+        }
+        confirmLabel={removeMemberBusy ? 'Removing…' : 'Remove'}
+        danger
+        onConfirm={() => void confirmRemoveMember()}
+        onClose={() => !removeMemberBusy && setRemoveMemberTarget(null)}
+      />
       <ConfirmDialog
         open={!!leaveTarget}
         title="Leave workspace?"
